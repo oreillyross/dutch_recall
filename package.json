@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.106",
+    "@ai-sdk/openai": "^4.0.121",
     "ai": "^7.0.177",
     "next": "^16.4.6",
     "react": "^19.3.1",
