@@ -1,7 +1,14 @@
 import "server-only";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createOpenAI } from "@ai-sdk/openai";
 import { generateText, Output, type LanguageModel } from "ai";
-import { DEFAULT_MODELS, estimateCostUSD, type Provider } from "./models";
+import {
+  DEFAULT_MODELS,
+  estimateCostUSD,
+  isOpenAIReasoningModel,
+  openAIReasoningEffort,
+  type Provider,
+} from "./models";
 import { insightSchema, type Insight } from "./schema";
 
 export class ConfigError extends Error {}
@@ -44,7 +51,10 @@ function getModel(provider: Provider): { model: LanguageModel; id: string } {
     const id = process.env.LLM_MODEL || DEFAULT_MODELS.anthropic;
     return { model: createAnthropic({ apiKey })(id), id };
   }
-  throw new ConfigError("The openai provider is not enabled yet");
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new ConfigError("OPENAI_API_KEY is not set on the server");
+  const id = process.env.LLM_MODEL || DEFAULT_MODELS.openai;
+  return { model: createOpenAI({ apiKey }).chat(id), id };
 }
 
 export async function generateInsight(entry: string): Promise<{ insight: Insight; usage: Usage }> {
@@ -61,9 +71,14 @@ export async function generateInsight(entry: string): Promise<{ insight: Insight
         output: Output.object({ schema: insightSchema }),
         maxOutputTokens: 800,
         maxRetries: 1,
-        // Claude Haiku 5.5 rejects non-default temperature, so none is sent.
-        // Thinking is off so the 800-token cap goes to the answer, not reasoning.
-        providerOptions: provider === "anthropic" ? { anthropic: { thinking: { type: "disabled" } } } : undefined,
+        // Claude Haiku 5.5 and OpenAI gpt-5* reasoning models reject non-default temperature,
+        // so it is only sent for non-reasoning OpenAI models (e.g. gpt-4.1-nano).
+        ...(provider === "openai" && !isOpenAIReasoningModel(id) ? { temperature: 0.3 } : {}),
+        // Reasoning is minimised so the 800-token cap goes to the answer, not to thinking.
+        providerOptions:
+          provider === "anthropic"
+            ? { anthropic: { thinking: { type: "disabled" } } }
+            : { openai: { reasoningEffort: openAIReasoningEffort(id) } },
       });
       const inputTokens = res.usage.inputTokens ?? 0;
       const outputTokens = res.usage.outputTokens ?? 0;
