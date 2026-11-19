@@ -5,6 +5,7 @@ export const KEYS = {
   deck: "nl.deck",
   index: "nl.index",
   insights: "nl.insights",
+  usage: "nl.usage",
 } as const;
 
 export function getItem<T>(key: string, fallback: T): T {

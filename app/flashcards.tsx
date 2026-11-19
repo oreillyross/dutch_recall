@@ -1,12 +1,13 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { fetchInsight } from "@/lib/insight-client";
+import { InsightError, fetchInsight } from "@/lib/insight-client";
 import type { Insight } from "@/lib/schema";
 import { KEYS, getItem, setItem } from "@/lib/storage";
+import { emptyUsage, recordCall, recordError, type UsageTotals } from "@/lib/usage";
 import { parseWords, shuffled } from "@/lib/words";
 
-type Tab = "cards" | "settings";
+type Tab = "cards" | "settings" | "usage";
 type BackState =
   | { status: "idle" }
   | { status: "loading" }
@@ -21,6 +22,7 @@ export default function Flashcards() {
   const [deck, setDeck] = useState<string[]>([]);
   const [index, setIndex] = useState(0);
   const [insights, setInsights] = useState<Record<string, Insight>>({});
+  const [usage, setUsage] = useState<UsageTotals>(emptyUsage);
   const [flipped, setFlipped] = useState(false);
   const [fetchState, setFetchState] = useState<BackState>({ status: "idle" });
 
@@ -38,6 +40,7 @@ export default function Flashcards() {
     setDeck(d);
     setIndex(i);
     setInsights(getItem<Record<string, Insight>>(KEYS.insights, {}));
+    setUsage(getItem<UsageTotals>(KEYS.usage, emptyUsage()));
     if (!d.length) setTab("settings");
     setReady(true);
     /* eslint-enable react-hooks/set-state-in-effect */
@@ -70,16 +73,31 @@ export default function Flashcards() {
       const my = ++reqId.current;
       setFetchState({ status: "loading" });
       try {
-        const data = await fetchInsight(word);
+        const { insight: data, usage: u } = await fetchInsight(word);
+        if (u) {
+          setUsage((prev) => {
+            const next = recordCall(prev, u);
+            setItem(KEYS.usage, next);
+            return next;
+          });
+        }
         setInsights((prev) => {
           const next = { ...prev, [key]: data };
           setItem(KEYS.insights, next);
           return next;
         });
         if (my === reqId.current) setFetchState({ status: "idle" });
-      } catch {
+      } catch (err) {
+        setUsage((prev) => {
+          const next = recordError(prev);
+          setItem(KEYS.usage, next);
+          return next;
+        });
         if (my !== reqId.current) return;
-        setFetchState({ status: "error", message: "Could not load the insight. Try again." });
+        setFetchState({
+          status: "error",
+          message: err instanceof InsightError ? err.message : "Could not load the insight. Try again.",
+        });
       }
     },
     [word, insights],
@@ -148,6 +166,9 @@ export default function Flashcards() {
           </button>
           <button role="tab" id="tab-settings" aria-selected={tab === "settings"} aria-controls="panel-settings" onClick={() => showTab("settings")}>
             Settings
+          </button>
+          <button role="tab" id="tab-usage" aria-selected={tab === "usage"} aria-controls="panel-usage" onClick={() => showTab("usage")}>
+            Usage
           </button>
         </nav>
       </header>
@@ -248,6 +269,62 @@ export default function Flashcards() {
           </button>
         </div>
       </section>
+
+      <section className="panel" id="panel-usage" role="tabpanel" aria-labelledby="tab-usage" hidden={tab !== "usage"}>
+        <UsagePanel
+          usage={usage}
+          onReset={() => {
+            const e = emptyUsage();
+            setUsage(e);
+            setItem(KEYS.usage, e);
+          }}
+        />
+      </section>
+    </div>
+  );
+}
+
+function fmtCost(n: number) {
+  return n > 0 && n < 0.0001 ? "<$0.0001" : `$${n.toFixed(n < 1 ? 4 : 2)}`;
+}
+
+function UsagePanel({ usage, onReset }: { usage: UsageTotals; onReset: () => void }) {
+  const models = Object.entries(usage.byModel);
+  return (
+    <div className="usage">
+      <p className="help">
+        Tokens and estimated cost of insight lookups from this browser. Cached cards cost nothing. Estimates use list prices.
+      </p>
+      <div className="stats">
+        <div><b>{usage.calls}</b><span>LLM calls</span></div>
+        <div><b>{usage.inputTokens.toLocaleString()}</b><span>input tokens</span></div>
+        <div><b>{usage.outputTokens.toLocaleString()}</b><span>output tokens</span></div>
+        <div><b>{fmtCost(usage.costUSD)}</b><span>est. cost{usage.unpriced ? " (partial)" : ""}</span></div>
+      </div>
+      {usage.errors > 0 && (
+        <p className="help">
+          {usage.errors} failed {usage.errors === 1 ? "request" : "requests"}.
+        </p>
+      )}
+      {models.length > 0 && (
+        <table className="usage-table">
+          <thead>
+            <tr><th>Model</th><th>Calls</th><th>In</th><th>Out</th><th>Cost</th></tr>
+          </thead>
+          <tbody>
+            {models.map(([m, v]) => (
+              <tr key={m}>
+                <td>{m}</td><td>{v.calls}</td><td>{v.inputTokens.toLocaleString()}</td><td>{v.outputTokens.toLocaleString()}</td><td>{fmtCost(v.costUSD)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div className="row">
+        <span className="count">Since {new Date(usage.since).toLocaleDateString()}</span>
+        <span className="spacer" />
+        <button className="btn ghost" onClick={onReset}>Reset</button>
+      </div>
     </div>
   );
 }
