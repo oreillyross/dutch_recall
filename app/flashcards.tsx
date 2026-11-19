@@ -11,7 +11,7 @@ type Tab = "cards" | "settings" | "usage";
 type BackState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "error"; message: string }
+  | { status: "error"; message: string; needsAccess?: boolean }
   | { status: "ok"; data: Insight };
 
 export default function Flashcards() {
@@ -22,6 +22,7 @@ export default function Flashcards() {
   const [deck, setDeck] = useState<string[]>([]);
   const [index, setIndex] = useState(0);
   const [insights, setInsights] = useState<Record<string, Insight>>({});
+  const [accessCode, setAccessCode] = useState("");
   const [usage, setUsage] = useState<UsageTotals>(emptyUsage);
   const [flipped, setFlipped] = useState(false);
   const [fetchState, setFetchState] = useState<BackState>({ status: "idle" });
@@ -40,6 +41,7 @@ export default function Flashcards() {
     setDeck(d);
     setIndex(i);
     setInsights(getItem<Record<string, Insight>>(KEYS.insights, {}));
+    setAccessCode(getItem<string>(KEYS.access, ""));
     setUsage(getItem<UsageTotals>(KEYS.usage, emptyUsage()));
     if (!d.length) setTab("settings");
     setReady(true);
@@ -73,7 +75,7 @@ export default function Flashcards() {
       const my = ++reqId.current;
       setFetchState({ status: "loading" });
       try {
-        const { insight: data, usage: u } = await fetchInsight(word);
+        const { insight: data, usage: u } = await fetchInsight(word, accessCode);
         if (u) {
           setUsage((prev) => {
             const next = recordCall(prev, u);
@@ -97,10 +99,11 @@ export default function Flashcards() {
         setFetchState({
           status: "error",
           message: err instanceof InsightError ? err.message : "Could not load the insight. Try again.",
+          needsAccess: err instanceof InsightError && err.status === 401,
         });
       }
     },
-    [word, insights],
+    [word, insights, accessCode],
   );
 
   const flip = useCallback(() => {
@@ -206,7 +209,7 @@ export default function Flashcards() {
                 <div className="face card-back" ref={backRef} aria-live="polite">
                   <span className="tag">English</span>
                   <div className="back-nl">{word}</div>
-                  <BackBody state={back} onRetry={() => void loadInsight(true)} />
+                  <BackBody state={back} onRetry={() => void loadInsight(true)} onSettings={() => showTab("settings")} />
                 </div>
               </div>
             </div>
@@ -246,6 +249,21 @@ export default function Flashcards() {
           value={raw}
           onChange={(e) => setRaw(e.target.value)}
           placeholder={"gezellig\naan de slag gaan\nuitzoeken\nde fiets\nhet is niet mijn pakkie-an"}
+        />
+        <label className="title access" htmlFor="access">
+          Access code <span className="count">(optional)</span>
+        </label>
+        <input
+          id="access"
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          value={accessCode}
+          onChange={(e) => {
+            setAccessCode(e.target.value);
+            setItem(KEYS.access, e.target.value);
+          }}
+          placeholder="Only needed if the site is protected"
         />
         <div className="row">
           <span className="count">
@@ -329,7 +347,7 @@ function UsagePanel({ usage, onReset }: { usage: UsageTotals; onReset: () => voi
   );
 }
 
-function BackBody({ state, onRetry }: { state: BackState; onRetry: () => void }) {
+function BackBody({ state, onRetry, onSettings }: { state: BackState; onRetry: () => void; onSettings: () => void }) {
   if (state.status === "loading")
     return (
       <div className="loading">
@@ -342,6 +360,11 @@ function BackBody({ state, onRetry }: { state: BackState; onRetry: () => void })
       <div className="err">
         {state.message}
         <br />
+        {state.needsAccess && (
+          <button className="btn small" onClick={onSettings}>
+            Open Settings
+          </button>
+        )}{" "}
         <button className="btn small" onClick={onRetry}>
           Try again
         </button>
