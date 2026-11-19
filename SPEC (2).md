@@ -13,16 +13,18 @@ Read `dutch-flashcards.html` first. Match its behaviour and look (Fraunces + Int
 ## Stack (my calls, change if there's a good reason)
 - Next.js App Router, TypeScript strict, pnpm, Tailwind optional (plain CSS modules or the reference CSS is fine).
 - Vercel AI SDK (`ai`, `@ai-sdk/anthropic`, `@ai-sdk/openai`) for provider switching + structured output with a Zod schema. Check current docs for the right structured-output call (`generateObject` vs `generateText` with output schema) before coding.
+  - in the settings include a monitoring of token usage and where possible the estimated cost so user can track what this costs, like an observability layer.
 - Zod for the insight schema and request validation.
 
 ## Features (parity with the reference)
 1. **Two tabs: Cards and Settings.** Starts on Settings if the deck is empty.
-2. **Settings:** textarea, one Dutch word/phrase per line. Trim, collapse whitespace, drop blanks, dedupe case-insensitively. Live word count. "Shuffle order" checkbox (default on). "Clear" and "Save & refresh cards" buttons. Save rebuilds the deck, resets index to 0, switches to Cards.
-3. **Cards:** progress (`3 / 40` + bar), front shows the Dutch word (smaller font for long phrases), tap/Enter/Space flips, Prev/Next buttons, ← → keys, Space flips (ignored while typing in the textarea).
-4. **Flip → insight:** on first flip of a card, call `/api/insight`. Show spinner, then the English translation (+ up to 2 alternatives), chips (part of speech with de/het, forms, pronunciation hint), 2 example sentences with translations, "Good to know" notes, 2-4 related words/collocations. Error state with "Try again". Flipping back does not refetch.
-5. **Caching:** insights cached per lowercase word in `localStorage` (`nl.insights`); a stale in-flight response must not render on a different card (request id guard, as in the reference).
-6. **Persistence:** `nl.raw`, `nl.shuffle`, `nl.deck`, `nl.index`, `nl.insights` in `localStorage`, all access wrapped in try/catch (SSR-safe: read in `useEffect`/client component only).
-7. Respect `prefers-color-scheme` and `prefers-reduced-motion`. Keep a11y from the reference (roles, aria-selected, focus rings, aria-live on the back).
+2. **Settings:** textarea, one Dutch word/phrase per line. Trim, collapse whitespace, drop blanks, dedupe case-insensitively. Live word count. "Shuffle order" checkbox (default on). "Clear" and "Save & refresh cards" buttons. Save rebuilds the deck, resets index to 0, switches to Cards. Add a tab for usage so it shows and collects the telemetry data on the token usage and llm calls each tim updating to show what this costs.
+   
+4. **Cards:** progress (`3 / 40` + bar), front shows the Dutch word (smaller font for long phrases), tap/Enter/Space flips, Prev/Next buttons, ← → keys, Space flips (ignored while typing in the textarea).
+5. **Flip → insight:** on first flip of a card, call `/api/insight`. Show spinner, then the English translation (+ up to 2 alternatives), chips (part of speech with de/het, forms, pronunciation hint), 2 example sentences with translations, "Good to know" notes, 2-4 related words/collocations. Error state with "Try again". Flipping back does not refetch.
+6. **Caching:** insights cached per lowercase word in `localStorage` (`nl.insights`); a stale in-flight response must not render on a different card (request id guard, as in the reference). Token usage can also be cached, it just needs to show current usage, being ephemeral is ok, NO database
+7. **Persistence:** `nl.raw`, `nl.shuffle`, `nl.deck`, `nl.index`, `nl.insights` in `localStorage`, all access wrapped in try/catch (SSR-safe: read in `useEffect`/client component only).
+8. Respect `prefers-color-scheme` and `prefers-reduced-motion`. Keep a11y from the reference (roles, aria-selected, focus rings, aria-live on the back).
 
 ## API
 `POST /api/insight`
