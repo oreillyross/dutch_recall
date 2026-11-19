@@ -1,25 +1,31 @@
-import type { Insight } from "./schema";
+import { insightSchema, type Insight } from "./schema";
+import type { Usage } from "./usage";
 
-/**
- * Slice 1: stubbed insight (fixed JSON after a short delay).
- * Slice 2 replaces the body with a POST to /api/insight.
- */
-export async function fetchInsight(entry: string): Promise<Insight> {
-  await new Promise((r) => setTimeout(r, 600));
-  return {
-    english: ["(stub) sample translation", "alternative meaning"],
-    pos: "noun · de",
-    forms: "plural: voorbeelden · diminutive: voorbeeldje",
-    pronunciation: "ui = ow-ish",
-    examples: [
-      { nl: `Dit is een voorbeeld met "${entry}".`, en: `This is an example with "${entry}".` },
-      { nl: "Kun je nog een voorbeeld geven?", en: "Can you give another example?" },
-    ],
-    notes:
-      "This is placeholder content from the stubbed insight. Real translations arrive once the /api/insight route is wired up.",
-    related: [
-      { nl: "het woord", en: "the word" },
-      { nl: "de zin", en: "the sentence" },
-    ],
-  };
+export class InsightError extends Error {}
+
+export async function fetchInsight(entry: string): Promise<{ insight: Insight; usage: Usage | null }> {
+  let res: Response;
+  try {
+    res = await fetch("/api/insight", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ entry }),
+    });
+  } catch {
+    throw new InsightError("Network error. Check your connection and try again.");
+  }
+  const body: unknown = await res.json().catch(() => null);
+  if (!res.ok) {
+    const msg = (body as { error?: string } | null)?.error;
+    throw new InsightError(msg || "Could not load the insight. Try again.");
+  }
+  const parsed = insightSchema.safeParse(body);
+  if (!parsed.success) throw new InsightError("The server returned an unexpected response.");
+  let usage: Usage | null = null;
+  try {
+    usage = JSON.parse(res.headers.get("x-llm-usage") ?? "null");
+  } catch {
+    usage = null;
+  }
+  return { insight: parsed.data, usage };
 }
