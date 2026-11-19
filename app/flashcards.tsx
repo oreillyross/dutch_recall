@@ -1,0 +1,319 @@
+"use client";
+
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { fetchInsight } from "@/lib/insight-client";
+import type { Insight } from "@/lib/schema";
+import { KEYS, getItem, setItem } from "@/lib/storage";
+import { parseWords, shuffled } from "@/lib/words";
+
+type Tab = "cards" | "settings";
+type BackState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ok"; data: Insight };
+
+export default function Flashcards() {
+  const [ready, setReady] = useState(false);
+  const [tab, setTab] = useState<Tab>("cards");
+  const [raw, setRaw] = useState("");
+  const [shuffleOn, setShuffleOn] = useState(true);
+  const [deck, setDeck] = useState<string[]>([]);
+  const [index, setIndex] = useState(0);
+  const [insights, setInsights] = useState<Record<string, Insight>>({});
+  const [flipped, setFlipped] = useState(false);
+  const [fetchState, setFetchState] = useState<BackState>({ status: "idle" });
+
+  const reqId = useRef(0);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const backRef = useRef<HTMLDivElement>(null);
+
+  // Hydrate from localStorage (client only).
+  useEffect(() => {
+    const d = getItem<string[]>(KEYS.deck, []);
+    const i = Math.min(getItem<number>(KEYS.index, 0), Math.max(d.length - 1, 0));
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setRaw(getItem<string>(KEYS.raw, ""));
+    setShuffleOn(getItem<boolean>(KEYS.shuffle, true));
+    setDeck(d);
+    setIndex(i);
+    setInsights(getItem<Record<string, Insight>>(KEYS.insights, {}));
+    if (!d.length) setTab("settings");
+    setReady(true);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, []);
+
+  const word = deck[index];
+  const cached = word ? insights[word.toLowerCase()] : undefined;
+  const back: BackState = cached ? { status: "ok", data: cached } : fetchState;
+  const count = parseWords(raw).length;
+
+  const showTab = useCallback((t: Tab) => {
+    setTab(t);
+    if (t === "settings") requestAnimationFrame(() => textareaRef.current?.focus({ preventScroll: true }));
+  }, []);
+
+  const resetCard = useCallback((nextIndex: number) => {
+    reqId.current++; // invalidate any in-flight response
+    setIndex(nextIndex);
+    setFlipped(false);
+    setFetchState({ status: "idle" });
+    setItem(KEYS.index, nextIndex);
+    if (backRef.current) backRef.current.scrollTop = 0;
+  }, []);
+
+  const loadInsight = useCallback(
+    async (force: boolean) => {
+      if (!word) return;
+      const key = word.toLowerCase();
+      if (!force && insights[key]) return;
+      const my = ++reqId.current;
+      setFetchState({ status: "loading" });
+      try {
+        const data = await fetchInsight(word);
+        setInsights((prev) => {
+          const next = { ...prev, [key]: data };
+          setItem(KEYS.insights, next);
+          return next;
+        });
+        if (my === reqId.current) setFetchState({ status: "idle" });
+      } catch {
+        if (my !== reqId.current) return;
+        setFetchState({ status: "error", message: "Could not load the insight. Try again." });
+      }
+    },
+    [word, insights],
+  );
+
+  const flip = useCallback(() => {
+    if (!deck.length) return;
+    if (!flipped) {
+      setFlipped(true);
+      void loadInsight(false);
+    } else {
+      setFlipped(false);
+    }
+  }, [deck.length, flipped, loadInsight]);
+
+  const go = useCallback(
+    (delta: number) => {
+      const n = index + delta;
+      if (n < 0 || n >= deck.length) return;
+      resetCard(n);
+    },
+    [index, deck.length, resetCard],
+  );
+
+  const save = () => {
+    const list = parseWords(raw);
+    const nextDeck = shuffleOn ? shuffled(list) : list;
+    setItem(KEYS.raw, raw);
+    setItem(KEYS.shuffle, shuffleOn);
+    setItem(KEYS.deck, nextDeck);
+    setDeck(nextDeck);
+    resetCard(0);
+    setTab("cards");
+  };
+
+  // Keyboard: Space flips, arrows navigate (ignored while typing).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (tab !== "cards") return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "TEXTAREA" || t.tagName === "INPUT")) return;
+      if (e.key === " " && !(t && t.tagName === "BUTTON")) {
+        e.preventDefault();
+        flip();
+      } else if (e.key === "ArrowRight") go(1);
+      else if (e.key === "ArrowLeft") go(-1);
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [tab, flip, go]);
+
+  if (!ready) return <div className="app" />;
+
+  const hasDeck = deck.length > 0;
+  const long = !!word && (word.length > 22 || word.split(" ").length > 3);
+
+  return (
+    <div className="app">
+      <header>
+        <h1>
+          Nederlands <span>kaartjes</span>
+        </h1>
+        <nav role="tablist" aria-label="Sections">
+          <button role="tab" id="tab-cards" aria-selected={tab === "cards"} aria-controls="panel-cards" onClick={() => showTab("cards")}>
+            Cards
+          </button>
+          <button role="tab" id="tab-settings" aria-selected={tab === "settings"} aria-controls="panel-settings" onClick={() => showTab("settings")}>
+            Settings
+          </button>
+        </nav>
+      </header>
+
+      <section className="panel" id="panel-cards" role="tabpanel" aria-labelledby="tab-cards" hidden={tab !== "cards"}>
+        {hasDeck ? (
+          <div id="deck">
+            <div className="progress">
+              <span>
+                {index + 1} / {deck.length}
+              </span>
+              <div className="bar">
+                <i style={{ width: `${((index + 1) / deck.length) * 100}%` }} />
+              </div>
+            </div>
+            <div className="scene">
+              <div className={`card${flipped ? " flipped" : ""}`}>
+                <div
+                  className="face card-front"
+                  tabIndex={0}
+                  role="button"
+                  aria-label="Flip card"
+                  onClick={flip}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      flip();
+                    }
+                  }}
+                >
+                  <span className="tag">Nederlands</span>
+                  <div className={`word${long ? " long" : ""}`}>{word}</div>
+                  <span className="hint">Guess the English, then tap to flip</span>
+                </div>
+                <div className="face card-back" ref={backRef} aria-live="polite">
+                  <span className="tag">English</span>
+                  <div className="back-nl">{word}</div>
+                  <BackBody state={back} onRetry={() => void loadInsight(true)} />
+                </div>
+              </div>
+            </div>
+            <div className="controls">
+              <button className="btn" onClick={() => go(-1)} disabled={index === 0}>
+                ← Prev
+              </button>
+              <button className="btn primary" onClick={flip}>
+                {flipped ? "Flip back" : "Flip"}
+              </button>
+              <button className="btn" onClick={() => go(1)} disabled={index === deck.length - 1}>
+                Next →
+              </button>
+            </div>
+            <div className="kbd">Space flips · ← → moves between cards</div>
+          </div>
+        ) : (
+          <div className="empty">
+            <h2>No words yet</h2>
+            <p>Paste some Dutch words or phrases in Settings.</p>
+            <button className="btn primary" onClick={() => showTab("settings")}>
+              Open Settings
+            </button>
+          </div>
+        )}
+      </section>
+
+      <section className="panel settings" id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden={tab !== "settings"}>
+        <label className="title" htmlFor="words">
+          Your Dutch words
+        </label>
+        <p className="help">One word or phrase per line. Duplicates and blank lines are ignored. Saving refreshes the flashcards.</p>
+        <textarea
+          id="words"
+          ref={textareaRef}
+          spellCheck={false}
+          value={raw}
+          onChange={(e) => setRaw(e.target.value)}
+          placeholder={"gezellig\naan de slag gaan\nuitzoeken\nde fiets\nhet is niet mijn pakkie-an"}
+        />
+        <div className="row">
+          <span className="count">
+            {count} {count === 1 ? "word" : "words"}
+          </span>
+          <label className="check">
+            <input type="checkbox" checked={shuffleOn} onChange={(e) => setShuffleOn(e.target.checked)} /> Shuffle order
+          </label>
+          <span className="spacer" />
+          <button
+            className="btn ghost"
+            onClick={() => {
+              setRaw("");
+              textareaRef.current?.focus();
+            }}
+          >
+            Clear
+          </button>
+          <button className="btn primary" onClick={save}>
+            Save &amp; refresh cards
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function BackBody({ state, onRetry }: { state: BackState; onRetry: () => void }) {
+  if (state.status === "loading")
+    return (
+      <div className="loading">
+        <div className="spin" />
+        <span>Looking it up…</span>
+      </div>
+    );
+  if (state.status === "error")
+    return (
+      <div className="err">
+        {state.message}
+        <br />
+        <button className="btn small" onClick={onRetry}>
+          Try again
+        </button>
+      </div>
+    );
+  if (state.status !== "ok") return null;
+
+  const d = state.data;
+  return (
+    <>
+      <div className="back-en">{d.english[0] || "—"}</div>
+      {d.english.length > 1 && <div className="alts">also: {d.english.slice(1).join(" · ")}</div>}
+      {(d.pos || d.forms || d.pronunciation) && (
+        <div className="chips">
+          {d.pos && <span className="chip hi">{d.pos}</span>}
+          {d.forms && <span className="chip">{d.forms}</span>}
+          {d.pronunciation && <span className="chip">🔊 {d.pronunciation}</span>}
+        </div>
+      )}
+      {d.examples.length > 0 && (
+        <div className="sec">
+          <h3>In use</h3>
+          {d.examples.map((x, i) => (
+            <div className="ex" key={i}>
+              <div className="nl">{x.nl}</div>
+              <div className="en">{x.en}</div>
+            </div>
+          ))}
+        </div>
+      )}
+      {d.notes && (
+        <div className="sec">
+          <h3>Good to know</h3>
+          <p>{d.notes}</p>
+        </div>
+      )}
+      {d.related.length > 0 && (
+        <div className="sec">
+          <h3>Related</h3>
+          <div className="rel">
+            {d.related.map((r, i) => (
+              <Fragment key={i}>
+                <b>{r.nl}</b>
+                <span>{r.en}</span>
+              </Fragment>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
