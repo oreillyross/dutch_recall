@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { accessAllowed, clientIp, rateLimit } from "@/lib/guard";
 import { ConfigError, UpstreamError, generateInsight } from "@/lib/llm";
 
 export const runtime = "nodejs";
@@ -10,6 +11,13 @@ const json = (body: unknown, status: number, headers?: Record<string, string>) =
   Response.json(body, { status, headers });
 
 export async function POST(req: Request) {
+  // Rate limit first so wrong-code guessing is throttled too.
+  const wait = rateLimit(clientIp(req));
+  if (wait !== null) {
+    return json({ error: "Too many requests. Wait a moment, then try again." }, 429, { "retry-after": String(wait) });
+  }
+  if (!accessAllowed(req)) return json({ error: "Access code missing or incorrect." }, 401);
+
   let parsed;
   try {
     parsed = bodySchema.safeParse(await req.json());

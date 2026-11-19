@@ -6,6 +6,7 @@ export const KEYS = {
   index: "nl.index",
   insights: "nl.insights",
   usage: "nl.usage",
+  access: "nl.access",
 } as const;
 
 export function getItem<T>(key: string, fallback: T): T {
