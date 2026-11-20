@@ -3,7 +3,8 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { InsightError, fetchDutchDescription, fetchInsight } from "@/lib/insight-client";
 import type { DutchDescription, Insight } from "@/lib/schema";
-import { KEYS, getItem, setItem } from "@/lib/storage";
+import { getSession, lock, unlock, type SessionState } from "@/lib/session-client";
+import { KEYS, getItem, removeItem, setItem } from "@/lib/storage";
 import { emptyUsage, recordCall, recordError, type UsageTotals } from "@/lib/usage";
 import { parseWords, shuffled } from "@/lib/words";
 
@@ -23,7 +24,9 @@ export default function Flashcards() {
   const [deck, setDeck] = useState<string[]>([]);
   const [index, setIndex] = useState(0);
   const [insights, setInsights] = useState<Record<string, Insight>>({});
-  const [accessCode, setAccessCode] = useState("");
+  const [session, setSession] = useState<SessionState | null>(null);
+  const [codeInput, setCodeInput] = useState("");
+  const [sessionMsg, setSessionMsg] = useState("");
   const [descriptions, setDescriptions] = useState<Record<string, DutchDescription>>({});
   const [backLang, setBackLang] = useState<BackLang>("en");
   const [usage, setUsage] = useState<UsageTotals>(emptyUsage);
@@ -46,11 +49,14 @@ export default function Flashcards() {
     setInsights(getItem<Record<string, Insight>>(KEYS.insights, {}));
     setDescriptions(getItem<Record<string, DutchDescription>>(KEYS.descriptions, {}));
     setBackLang(getItem<BackLang>(KEYS.backLang, "en") === "nl" ? "nl" : "en");
-    setAccessCode(getItem<string>(KEYS.access, ""));
+    removeItem(KEYS.access); // legacy plaintext access code from older versions
     setUsage(getItem<UsageTotals>(KEYS.usage, emptyUsage()));
     if (!d.length) setTab("settings");
     setReady(true);
     /* eslint-enable react-hooks/set-state-in-effect */
+    getSession()
+      .then(setSession)
+      .catch(() => setSession(null));
   }, []);
 
   const word = deck[index];
@@ -84,7 +90,7 @@ export default function Flashcards() {
       try {
         let u;
         if (lang === "nl") {
-          const res = await fetchDutchDescription(word, accessCode);
+          const res = await fetchDutchDescription(word);
           u = res.usage;
           setDescriptions((prev) => {
             const next = { ...prev, [key]: res.insight };
@@ -92,7 +98,7 @@ export default function Flashcards() {
             return next;
           });
         } else {
-          const res = await fetchInsight(word, accessCode);
+          const res = await fetchInsight(word);
           u = res.usage;
           setInsights((prev) => {
             const next = { ...prev, [key]: res.insight };
@@ -122,7 +128,7 @@ export default function Flashcards() {
         });
       }
     },
-    [word, insights, descriptions, accessCode, backLang],
+    [word, insights, descriptions, backLang],
   );
 
   const changeBackLang = (lang: BackLang) => {
@@ -286,21 +292,57 @@ export default function Flashcards() {
           onChange={(e) => setRaw(e.target.value)}
           placeholder={"gezellig\naan de slag gaan\nuitzoeken\nde fiets\nhet is niet mijn pakkie-an"}
         />
-        <label className="title access" htmlFor="access">
-          Access code <span className="count">(optional)</span>
-        </label>
-        <input
-          id="access"
-          type="password"
-          autoComplete="off"
-          spellCheck={false}
-          value={accessCode}
-          onChange={(e) => {
-            setAccessCode(e.target.value);
-            setItem(KEYS.access, e.target.value);
-          }}
-          placeholder="Only needed if the site is protected"
-        />
+        {session?.required && (
+          <>
+            <label className="title access" htmlFor="access">
+              Access code
+            </label>
+            {session.unlocked ? (
+              <div className="row">
+                <span className="count">Unlocked on this browser.</span>
+                <span className="spacer" />
+                <button
+                  className="btn ghost"
+                  onClick={() => {
+                    setSessionMsg("");
+                    lock().then(setSession, (e: Error) => setSessionMsg(e.message));
+                  }}
+                >
+                  Lock
+                </button>
+              </div>
+            ) : (
+              <form
+                className="row"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  setSessionMsg("");
+                  unlock(codeInput).then(
+                    (s) => {
+                      setCodeInput("");
+                      setSession(s);
+                    },
+                    (err: Error) => setSessionMsg(err.message),
+                  );
+                }}
+              >
+                <input
+                  id="access"
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={codeInput}
+                  onChange={(e) => setCodeInput(e.target.value)}
+                  placeholder="Needed to use this site"
+                />
+                <button className="btn primary" type="submit" disabled={!codeInput}>
+                  Unlock
+                </button>
+              </form>
+            )}
+            {sessionMsg && <p className="help" role="alert">{sessionMsg}</p>}
+          </>
+        )}
         <div className="row backlang" role="radiogroup" aria-label="Card back language">
           <span className="title">Card back</span>
           <label className="check">

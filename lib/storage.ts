@@ -8,6 +8,7 @@ export const KEYS = {
   descriptions: "nl.descriptions",
   backLang: "nl.backLang",
   usage: "nl.usage",
+  /** Legacy: the access code used to be stored here in plain text. Removed on load. */
   access: "nl.access",
 } as const;
 
@@ -17,6 +18,14 @@ export function getItem<T>(key: string, fallback: T): T {
     return v == null ? fallback : (JSON.parse(v) as T);
   } catch {
     return fallback;
+  }
+}
+
+export function removeItem(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // ignore
   }
 }
 

@@ -29,7 +29,7 @@ Read `dutch-flashcards.html` first. Match its behaviour and look (Fraunces + Int
 ## API
 `POST /api/insight`
 - Body: `{ "entry": string }` — validate with Zod: trimmed, 1-200 chars.
-- Auth: if `ACCESS_CODE` env is set, require header `x-access-code` to match, else 401. The Settings tab gets an optional "Access code" field stored in `localStorage` and sent with each request. (Without this, anyone with the URL can spend your key.)
+- Auth: if `ACCESS_CODE` env is set, `/api/insight` requires a valid `nl_session` cookie, else 401. The Settings tab has an "Access code" field that POSTs to `/api/session`, which sets an `HttpOnly; Secure; SameSite=Strict` cookie holding an HMAC of the code (never the code itself); nothing is stored in `localStorage`. A Lock button clears it. HSTS is sent on every response. (Without this, anyone with the URL can spend your key.)
 - Response 200: the insight object below. Errors: `{ "error": string }` with 400/401/429/502 as appropriate. Never leak the key or raw provider errors.
 - Server-only. Keys must never reach the client bundle.
 
