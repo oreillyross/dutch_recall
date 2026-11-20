@@ -145,3 +145,15 @@
   border: 1px solid var(--line); border-radius: 12px;
 }
 .settings input[type="password"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* PWA install banner */
+  .install-banner {
+    position: fixed; left: 12px; right: 12px; bottom: max(12px, env(safe-area-inset-bottom));
+    max-width: 696px; margin: 0 auto; z-index: 50;
+    display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .18);
+  }
+  .install-text { flex: 1; display: flex; flex-direction: column; gap: 2px; font-size: 14px; line-height: 1.4; }
+  .install-text span { color: var(--muted); }
+  .install-close { border: 0; background: transparent; color: var(--muted); font-size: 24px; line-height: 1; cursor: pointer; padding: 4px 8px; }
