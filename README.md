@@ -31,7 +31,7 @@ pnpm build
 | `LLM_MODEL` | no | per provider (below) | Override the model id |
 | `ANTHROPIC_API_KEY` | if provider is `anthropic` | none | Anthropic key |
 | `OPENAI_API_KEY` | if provider is `openai` | none | OpenAI key |
-| `ACCESS_CODE` | no, recommended on a public URL | unset (open) | Shared secret the browser must send |
+| `ACCESS_CODE` | no, recommended on a public URL | unset (open) | Shared secret, exchanged once for a session cookie |
 | `RATE_LIMIT_PER_MIN` | no | `30` | Max requests per IP per minute |
 
 Only the selected provider's key is needed. A missing key makes the card show a generic "server is not
@@ -72,8 +72,12 @@ Notes on model parameters:
 
 Anyone with the URL can otherwise spend your API key. Two guardrails are built in:
 
-- **Access code.** Set `ACCESS_CODE` and the API returns 401 without a matching `x-access-code` header. Each
-  user enters the code once under **Settings > Access code** (stored in their browser).
+- **Access code.** Set `ACCESS_CODE` and `/api/insight` returns 401 without a valid session. Each user types the
+  code once under **Settings > Access code**; the server checks it (constant-time) and replies with an
+  `HttpOnly; SameSite=Strict; Secure` cookie holding an HMAC of the code, not the code. The code is never stored in
+  the browser and page scripts cannot read the cookie. Sessions last 30 days; **Lock** clears it, and changing
+  `ACCESS_CODE` invalidates every session. Use a long random value. HTTPS is what protects the code in transit
+  (Vercel enforces it, and the app sends an HSTS header); over plain `http://` the code travels in cleartext.
 - **Rate limit.** In-memory, per IP, 30 requests a minute by default, 429 with `retry-after` beyond that.
   Failed access-code attempts count, so guessing is throttled.
 
@@ -97,7 +101,7 @@ For a hard spending cap, also set a budget or usage limit in your Anthropic or O
    `OPENAI_API_KEY` with `LLM_PROVIDER=openai`) and, recommended, `ACCESS_CODE`. Add these for Production
    (and Preview if you use it). Never commit real keys: `.env` and `.env.local` are git-ignored; `.env.example` is the only env file meant to be committed.
 4. Deploy. After changing an env var, redeploy so it takes effect.
-5. Open the site, enter the access code in **Settings**, paste some words and flip a card.
+5. Open the site, unlock with the access code in **Settings**, paste some words and flip a card.
 
 The API route runs on the Node.js runtime with a 30-second limit (`maxDuration`), which is enough for a
 single small-model call.
@@ -106,11 +110,12 @@ single small-model call.
 
 ```
 app/page.tsx, app/flashcards.tsx   client UI: tabs, deck, flip card, settings, usage
-app/api/insight/route.ts           POST /api/insight: rate limit, access code, validation, LLM call
+app/api/insight/route.ts           POST /api/insight: rate limit, session check, validation, LLM call
+app/api/session/route.ts           GET/POST/DELETE: check, unlock (set cookie), lock
 lib/llm.ts                         provider selection and structured-output call (Vercel AI SDK)
 lib/models.ts                      default models, price table, reasoning-model helpers
 lib/schema.ts                      Zod insight schema (shared by server and client)
-lib/guard.ts                       access code and rate limit
+lib/guard.ts                       access code, session cookie and rate limit
 lib/storage.ts                     safe localStorage helpers
 reference/dutch-flashcards.html    original single-file prototype
 ```

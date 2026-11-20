@@ -11,16 +11,14 @@ export class InsightError extends Error {
   }
 }
 
-export const fetchInsight = (entry: string, accessCode: string) => request(entry, accessCode, "en", insightSchema);
+export const fetchInsight = (entry: string) => request(entry, "en", insightSchema);
 
-export const fetchDutchDescription = (entry: string, accessCode: string) =>
-  request(entry, accessCode, "nl", dutchDescriptionSchema);
+export const fetchDutchDescription = (entry: string) => request(entry, "nl", dutchDescriptionSchema);
 
 export type { DutchDescription, Insight };
 
 async function request<T>(
   entry: string,
-  accessCode: string,
   lang: "en" | "nl",
   schema: z.ZodType<T>,
 ): Promise<{ insight: T; usage: Usage | null }> {
@@ -28,7 +26,8 @@ async function request<T>(
   try {
     res = await fetch("/api/insight", {
       method: "POST",
-      headers: { "content-type": "application/json", ...(accessCode ? { "x-access-code": accessCode } : {}) },
+      headers: { "content-type": "application/json" },
+      credentials: "same-origin", // sends the HttpOnly session cookie
       body: JSON.stringify({ entry, lang }),
     });
   } catch {
@@ -36,12 +35,7 @@ async function request<T>(
   }
   const body: unknown = await res.json().catch(() => null);
   if (res.status === 401) {
-    throw new InsightError(
-      accessCode
-        ? "That access code was not accepted. Check the access code in Settings."
-        : "This site needs an access code. Add it in Settings.",
-      401,
-    );
+    throw new InsightError("This site needs an access code. Unlock it in Settings.", 401);
   }
   if (!res.ok) {
     const msg = (body as { error?: string } | null)?.error;

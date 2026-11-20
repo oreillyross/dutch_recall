@@ -1,5 +1,5 @@
 import "server-only";
-import { timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 
 const WINDOW_MS = 60_000;
 const DEFAULT_LIMIT = 30;
@@ -35,14 +35,50 @@ export function rateLimit(ip: string, now = Date.now()): number | null {
   return null;
 }
 
-/** True when no ACCESS_CODE is configured, or the request header matches it. */
-export function accessAllowed(req: Request): boolean {
-  const expected = process.env.ACCESS_CODE;
-  if (!expected) return true;
-  const given = req.headers.get("x-access-code") ?? "";
-  const a = Buffer.from(given);
-  const b = Buffer.from(expected);
+export const SESSION_COOKIE = "nl_session";
+export const SESSION_MAX_AGE_S = 60 * 60 * 24 * 30;
+
+const safeEqual = (x: string, y: string) => {
+  const a = Buffer.from(x);
+  const b = Buffer.from(y);
   return a.length === b.length && timingSafeEqual(a, b);
+};
+
+/** True when ACCESS_CODE is set, i.e. the API is protected. */
+export const accessRequired = () => !!process.env.ACCESS_CODE;
+
+/** Constant-time check of a typed access code. */
+export function codeMatches(given: string): boolean {
+  const expected = process.env.ACCESS_CODE;
+  return !!expected && safeEqual(given, expected);
+}
+
+/**
+ * Cookie value proving the code was entered. It is an HMAC keyed by the code, so the cookie never contains
+ * the code itself, and changing ACCESS_CODE invalidates every existing session.
+ */
+export function sessionToken(): string {
+  return createHmac("sha256", process.env.ACCESS_CODE ?? "").update("dutch-recall-session-v1").digest("hex");
+}
+
+function readCookie(req: Request, name: string): string {
+  for (const part of (req.headers.get("cookie") ?? "").split(";")) {
+    const i = part.indexOf("=");
+    if (i > 0 && part.slice(0, i).trim() === name) return part.slice(i + 1).trim();
+  }
+  return "";
+}
+
+/** Set-Cookie header value. HttpOnly keeps it from scripts; Secure (production) keeps it off plain HTTP. */
+export function sessionCookie(value: string, maxAge: number): string {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `${SESSION_COOKIE}=${value}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${secure}`;
+}
+
+/** True when no ACCESS_CODE is configured, or the request carries a valid session cookie. */
+export function accessAllowed(req: Request): boolean {
+  if (!accessRequired()) return true;
+  return safeEqual(readCookie(req, SESSION_COOKIE), sessionToken());
 }
 
 /** Test helper. */
