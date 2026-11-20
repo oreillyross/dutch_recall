@@ -5,6 +5,8 @@ export const KEYS = {
   deck: "nl.deck",
   index: "nl.index",
   insights: "nl.insights",
+  descriptions: "nl.descriptions",
+  backLang: "nl.backLang",
   usage: "nl.usage",
   access: "nl.access",
 } as const;

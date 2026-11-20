@@ -103,6 +103,8 @@
   .sec { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--back-line); }
   .sec h3 { margin: 0 0 8px; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--back-muted); font-weight: 600; }
   .sec p { margin: 0; line-height: 1.6; font-size: 15px; }
+  .uitleg { margin: 18px 0 0; line-height: 1.65; font-size: 17px; }
+  .backlang .title { margin: 0; }
   .ex { margin: 0 0 10px; }
   .ex .nl { font-weight: 500; font-size: 15.5px; line-height: 1.45; }
   .ex .en { color: var(--back-muted); font-size: 14px; margin-top: 1px; }
