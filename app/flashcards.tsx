@@ -1,18 +1,19 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { InsightError, fetchInsight } from "@/lib/insight-client";
-import type { Insight } from "@/lib/schema";
+import { InsightError, fetchDutchDescription, fetchInsight } from "@/lib/insight-client";
+import type { DutchDescription, Insight } from "@/lib/schema";
 import { KEYS, getItem, setItem } from "@/lib/storage";
 import { emptyUsage, recordCall, recordError, type UsageTotals } from "@/lib/usage";
 import { parseWords, shuffled } from "@/lib/words";
 
 type Tab = "cards" | "settings" | "usage";
-type BackState =
+type BackLang = "en" | "nl";
+type BackState<T = Insight> =
   | { status: "idle" }
   | { status: "loading" }
   | { status: "error"; message: string; needsAccess?: boolean }
-  | { status: "ok"; data: Insight };
+  | { status: "ok"; data: T };
 
 export default function Flashcards() {
   const [ready, setReady] = useState(false);
@@ -23,9 +24,11 @@ export default function Flashcards() {
   const [index, setIndex] = useState(0);
   const [insights, setInsights] = useState<Record<string, Insight>>({});
   const [accessCode, setAccessCode] = useState("");
+  const [descriptions, setDescriptions] = useState<Record<string, DutchDescription>>({});
+  const [backLang, setBackLang] = useState<BackLang>("en");
   const [usage, setUsage] = useState<UsageTotals>(emptyUsage);
   const [flipped, setFlipped] = useState(false);
-  const [fetchState, setFetchState] = useState<BackState>({ status: "idle" });
+  const [fetchState, setFetchState] = useState<BackState<never>>({ status: "idle" });
 
   const reqId = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -41,6 +44,8 @@ export default function Flashcards() {
     setDeck(d);
     setIndex(i);
     setInsights(getItem<Record<string, Insight>>(KEYS.insights, {}));
+    setDescriptions(getItem<Record<string, DutchDescription>>(KEYS.descriptions, {}));
+    setBackLang(getItem<BackLang>(KEYS.backLang, "en") === "nl" ? "nl" : "en");
     setAccessCode(getItem<string>(KEYS.access, ""));
     setUsage(getItem<UsageTotals>(KEYS.usage, emptyUsage()));
     if (!d.length) setTab("settings");
@@ -50,7 +55,9 @@ export default function Flashcards() {
 
   const word = deck[index];
   const cached = word ? insights[word.toLowerCase()] : undefined;
+  const cachedNl = word ? descriptions[word.toLowerCase()] : undefined;
   const back: BackState = cached ? { status: "ok", data: cached } : fetchState;
+  const backNl: BackState<DutchDescription> = cachedNl ? { status: "ok", data: cachedNl } : fetchState;
   const count = parseWords(raw).length;
 
   const showTab = useCallback((t: Tab) => {
@@ -68,14 +75,31 @@ export default function Flashcards() {
   }, []);
 
   const loadInsight = useCallback(
-    async (force: boolean) => {
+    async (force: boolean, lang: BackLang = backLang) => {
       if (!word) return;
       const key = word.toLowerCase();
-      if (!force && insights[key]) return;
+      if (!force && (lang === "nl" ? descriptions[key] : insights[key])) return;
       const my = ++reqId.current;
       setFetchState({ status: "loading" });
       try {
-        const { insight: data, usage: u } = await fetchInsight(word, accessCode);
+        let u;
+        if (lang === "nl") {
+          const res = await fetchDutchDescription(word, accessCode);
+          u = res.usage;
+          setDescriptions((prev) => {
+            const next = { ...prev, [key]: res.insight };
+            setItem(KEYS.descriptions, next);
+            return next;
+          });
+        } else {
+          const res = await fetchInsight(word, accessCode);
+          u = res.usage;
+          setInsights((prev) => {
+            const next = { ...prev, [key]: res.insight };
+            setItem(KEYS.insights, next);
+            return next;
+          });
+        }
         if (u) {
           setUsage((prev) => {
             const next = recordCall(prev, u);
@@ -83,11 +107,6 @@ export default function Flashcards() {
             return next;
           });
         }
-        setInsights((prev) => {
-          const next = { ...prev, [key]: data };
-          setItem(KEYS.insights, next);
-          return next;
-        });
         if (my === reqId.current) setFetchState({ status: "idle" });
       } catch (err) {
         setUsage((prev) => {
@@ -103,8 +122,17 @@ export default function Flashcards() {
         });
       }
     },
-    [word, insights, accessCode],
+    [word, insights, descriptions, accessCode, backLang],
   );
+
+  const changeBackLang = (lang: BackLang) => {
+    if (lang === backLang) return;
+    setBackLang(lang);
+    setItem(KEYS.backLang, lang);
+    reqId.current++; // drop any in-flight request for the other language
+    setFetchState({ status: "idle" });
+    if (flipped) void loadInsight(false, lang);
+  };
 
   const flip = useCallback(() => {
     if (!deck.length) return;
@@ -204,12 +232,20 @@ export default function Flashcards() {
                 >
                   <span className="tag">Nederlands</span>
                   <div className={`word${long ? " long" : ""}`}>{word}</div>
-                  <span className="hint">Guess the English, then tap to flip</span>
+                  <span className="hint">{backLang === "nl" ? "Probeer het uit te leggen, tik dan om te draaien" : "Guess the English, then tap to flip"}</span>
                 </div>
                 <div className="face card-back" ref={backRef} aria-live="polite">
-                  <span className="tag">English</span>
+                  <span className="tag">{backLang === "nl" ? "Uitleg" : "English"}</span>
                   <div className="back-nl">{word}</div>
-                  <BackBody state={back} onRetry={() => void loadInsight(true)} onSettings={() => showTab("settings")} />
+                  {backLang === "nl" ? (
+                    <BackShell state={backNl} onRetry={() => void loadInsight(true)} onSettings={() => showTab("settings")}>
+                      {(d) => <p className="uitleg">{d.uitleg}</p>}
+                    </BackShell>
+                  ) : (
+                    <BackShell state={back} onRetry={() => void loadInsight(true)} onSettings={() => showTab("settings")}>
+                      {(d) => <EnglishBody d={d} />}
+                    </BackShell>
+                  )}
                 </div>
               </div>
             </div>
@@ -265,6 +301,16 @@ export default function Flashcards() {
           }}
           placeholder="Only needed if the site is protected"
         />
+        <div className="row backlang" role="radiogroup" aria-label="Card back language">
+          <span className="title">Card back</span>
+          <label className="check">
+            <input type="radio" name="backlang" checked={backLang === "en"} onChange={() => changeBackLang("en")} /> English description
+          </label>
+          <label className="check">
+            <input type="radio" name="backlang" checked={backLang === "nl"} onChange={() => changeBackLang("nl")} /> Dutch description
+            (groep 7/8)
+          </label>
+        </div>
         <div className="row">
           <span className="count">
             {count} {count === 1 ? "word" : "words"}
@@ -347,7 +393,17 @@ function UsagePanel({ usage, onReset }: { usage: UsageTotals; onReset: () => voi
   );
 }
 
-function BackBody({ state, onRetry, onSettings }: { state: BackState; onRetry: () => void; onSettings: () => void }) {
+function BackShell<T>({
+  state,
+  onRetry,
+  onSettings,
+  children,
+}: {
+  state: BackState<T>;
+  onRetry: () => void;
+  onSettings: () => void;
+  children: (data: T) => React.ReactNode;
+}) {
   if (state.status === "loading")
     return (
       <div className="loading">
@@ -371,8 +427,10 @@ function BackBody({ state, onRetry, onSettings }: { state: BackState; onRetry: (
       </div>
     );
   if (state.status !== "ok") return null;
+  return <>{children(state.data)}</>;
+}
 
-  const d = state.data;
+function EnglishBody({ d }: { d: Insight }) {
   return (
     <>
       <div className="back-en">{d.english[0] || "—"}</div>

@@ -1,4 +1,5 @@
-import { insightSchema, type Insight } from "./schema";
+import { dutchDescriptionSchema, insightSchema, type DutchDescription, type Insight } from "./schema";
+import type { z } from "zod";
 import type { Usage } from "./usage";
 
 export class InsightError extends Error {
@@ -10,16 +11,25 @@ export class InsightError extends Error {
   }
 }
 
-export async function fetchInsight(
+export const fetchInsight = (entry: string, accessCode: string) => request(entry, accessCode, "en", insightSchema);
+
+export const fetchDutchDescription = (entry: string, accessCode: string) =>
+  request(entry, accessCode, "nl", dutchDescriptionSchema);
+
+export type { DutchDescription, Insight };
+
+async function request<T>(
   entry: string,
   accessCode: string,
-): Promise<{ insight: Insight; usage: Usage | null }> {
+  lang: "en" | "nl",
+  schema: z.ZodType<T>,
+): Promise<{ insight: T; usage: Usage | null }> {
   let res: Response;
   try {
     res = await fetch("/api/insight", {
       method: "POST",
       headers: { "content-type": "application/json", ...(accessCode ? { "x-access-code": accessCode } : {}) },
-      body: JSON.stringify({ entry }),
+      body: JSON.stringify({ entry, lang }),
     });
   } catch {
     throw new InsightError("Network error. Check your connection and try again.");
@@ -37,7 +47,7 @@ export async function fetchInsight(
     const msg = (body as { error?: string } | null)?.error;
     throw new InsightError(msg || "Could not load the insight. Try again.", res.status);
   }
-  const parsed = insightSchema.safeParse(body);
+  const parsed = schema.safeParse(body);
   if (!parsed.success) throw new InsightError("The server returned an unexpected response.");
   let usage: Usage | null = null;
   try {

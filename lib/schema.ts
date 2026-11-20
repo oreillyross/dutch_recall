@@ -15,3 +15,8 @@ export const insightSchema = z.object({
 });
 
 export type Insight = z.infer<typeof insightSchema>;
+
+/** Dutch-only explanation, written for a groep 7/8 child. */
+export const dutchDescriptionSchema = z.object({ uitleg: z.string().min(1) });
+
+export type DutchDescription = z.infer<typeof dutchDescriptionSchema>;
