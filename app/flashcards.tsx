@@ -19,7 +19,9 @@ type BackState<T = Insight> =
 export default function Flashcards() {
   const [ready, setReady] = useState(false);
   const [tab, setTab] = useState<Tab>("cards");
-  const [raw, setRaw] = useState("");
+  const [raw, setRaw] = useState(""); // saved words, newline-separated
+  const [draft, setDraft] = useState(""); // new words typed but not yet saved
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [shuffleOn, setShuffleOn] = useState(true);
   const [deck, setDeck] = useState<string[]>([]);
   const [index, setIndex] = useState(0);
@@ -35,6 +37,7 @@ export default function Flashcards() {
 
   const reqId = useRef(0);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const dialogRef = useRef<HTMLDialogElement>(null);
   const backRef = useRef<HTMLDivElement>(null);
 
   // Hydrate from localStorage (client only).
@@ -64,7 +67,16 @@ export default function Flashcards() {
   const cachedNl = word ? descriptions[word.toLowerCase()] : undefined;
   const back: BackState = cached ? { status: "ok", data: cached } : fetchState;
   const backNl: BackState<DutchDescription> = cachedNl ? { status: "ok", data: cachedNl } : fetchState;
-  const count = parseWords(raw).length;
+  const savedWords = parseWords(raw);
+  const draftCount = parseWords(draft).length;
+  const count = parseWords(`${raw}\n${draft}`).length;
+
+  useEffect(() => {
+    const d = dialogRef.current;
+    if (!d) return;
+    if (pendingDelete && !d.open) d.showModal();
+    else if (!pendingDelete && d.open) d.close();
+  }, [pendingDelete]);
 
   const showTab = useCallback((t: Tab) => {
     setTab(t);
@@ -159,10 +171,27 @@ export default function Flashcards() {
     [index, deck.length, resetCard],
   );
 
+  const confirmDelete = () => {
+    const target = pendingDelete;
+    setPendingDelete(null);
+    if (!target) return;
+    const key = target.toLowerCase();
+    const nextSaved = savedWords.filter((w) => w.toLowerCase() !== key).join("\n");
+    const nextDeck = deck.filter((w) => w.toLowerCase() !== key);
+    setRaw(nextSaved);
+    setItem(KEYS.raw, nextSaved);
+    setDeck(nextDeck);
+    setItem(KEYS.deck, nextDeck);
+    resetCard(Math.min(index, Math.max(nextDeck.length - 1, 0)));
+  };
+
   const save = () => {
-    const list = parseWords(raw);
-    const nextDeck = shuffleOn ? shuffled(list) : list;
-    setItem(KEYS.raw, raw);
+    const merged = parseWords(`${raw}\n${draft}`);
+    const mergedRaw = merged.join("\n");
+    const nextDeck = shuffleOn ? shuffled(merged) : merged;
+    setRaw(mergedRaw);
+    setDraft("");
+    setItem(KEYS.raw, mergedRaw);
     setItem(KEYS.shuffle, shuffleOn);
     setItem(KEYS.deck, nextDeck);
     setDeck(nextDeck);
@@ -283,14 +312,32 @@ export default function Flashcards() {
         <label className="title" htmlFor="words">
           Your Dutch words
         </label>
-        <p className="help">One word or phrase per line. Duplicates and blank lines are ignored. Saving refreshes the flashcards.</p>
+        <p className="help">
+          One word or phrase per line. Duplicates and blank lines are ignored. Saved words are locked; remove one with its ×.
+        </p>
+        {savedWords.length > 0 && (
+          <ul className="pills" aria-label="Saved words">
+            {savedWords.map((w) => (
+              <li key={w} className="pill">
+                <span>{w}</span>
+                <button type="button" aria-label={`Remove ${w}`} onClick={() => setPendingDelete(w)}>
+                  ×
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
         <textarea
           id="words"
           ref={textareaRef}
           spellCheck={false}
-          value={raw}
-          onChange={(e) => setRaw(e.target.value)}
-          placeholder={"gezellig\naan de slag gaan\nuitzoeken\nde fiets\nhet is niet mijn pakkie-an"}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          placeholder={
+            savedWords.length
+              ? "Add more words…"
+              : "gezellig\naan de slag gaan\nuitzoeken\nde fiets\nhet is niet mijn pakkie-an"
+          }
         />
         {session?.required && (
           <>
@@ -361,20 +408,37 @@ export default function Flashcards() {
             <input type="checkbox" checked={shuffleOn} onChange={(e) => setShuffleOn(e.target.checked)} /> Shuffle order
           </label>
           <span className="spacer" />
-          <button
-            className="btn ghost"
-            onClick={() => {
-              setRaw("");
-              textareaRef.current?.focus();
-            }}
-          >
-            Clear
-          </button>
+          {draftCount > 0 && (
+            <button
+              className="btn ghost"
+              onClick={() => {
+                setDraft("");
+                textareaRef.current?.focus();
+              }}
+            >
+              Clear new
+            </button>
+          )}
           <button className="btn primary" onClick={save}>
             Save &amp; refresh cards
           </button>
         </div>
       </section>
+
+      <dialog ref={dialogRef} className="confirm" onClose={() => setPendingDelete(null)}>
+        <p>
+          Remove <b>{pendingDelete}</b> from your words? Its flashcard will be deleted.
+        </p>
+        <div className="row">
+          <span className="spacer" />
+          <button className="btn ghost" autoFocus onClick={() => setPendingDelete(null)}>
+            Cancel
+          </button>
+          <button className="btn primary" onClick={confirmDelete}>
+            Remove
+          </button>
+        </div>
+      </dialog>
 
       <section className="panel" id="panel-usage" role="tabpanel" aria-labelledby="tab-usage" hidden={tab !== "usage"}>
         <UsagePanel
