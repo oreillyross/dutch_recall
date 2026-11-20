@@ -157,3 +157,12 @@
   .install-text { flex: 1; display: flex; flex-direction: column; gap: 2px; font-size: 14px; line-height: 1.4; }
   .install-text span { color: var(--muted); }
   .install-close { border: 0; background: transparent; color: var(--muted); font-size: 24px; line-height: 1; cursor: pointer; padding: 4px 8px; }
+
+.pills { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.pill { display: inline-flex; align-items: center; gap: 4px; padding: 4px 4px 4px 12px; border-radius: 999px; background: var(--accent-soft); border: 1px solid var(--line); font-size: 14px; }
+.pill button { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 16px; line-height: 1; width: 24px; height: 24px; border-radius: 50%; cursor: pointer; }
+.pill button:hover { background: var(--accent); color: var(--accent-ink); }
+.pill button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+dialog.confirm { background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; max-width: 360px; }
+dialog.confirm::backdrop { background: rgba(0,0,0,.45); }
+dialog.confirm p { margin: 0; line-height: 1.5; }
