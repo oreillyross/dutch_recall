@@ -50,6 +50,11 @@ const SYSTEM_DUTCH = [
   "- Je mag het woord niet gebruiken om zichzelf uit te leggen.",
   "- Het is een uitleg van 2 tot 4 korte zinnen, aaneengesloten tekst zonder opsommingstekens, titels of aanhef.",
   "- Het mag vriendelijk klinken, maar niet kinderachtig.",
+  "- Vul ook `grammatica` in: voor elk belangrijk woord van het woord of de uitdrukking (maximaal 5, sla lidwoorden en voegwoordjes over) één regel.",
+  "  - woord: het woord zoals het in de invoer staat.",
+  '  - soort: de woordsoort in het Nederlands: "zelfstandig naamwoord", "werkwoord", "bijvoeglijk naamwoord", "bijwoord", "voorzetsel", enzovoort.',
+  '  - details: bij een zelfstandig naamwoord "de-woord" of "het-woord" en eventueel het meervoud; bij een werkwoord de tijd (tegenwoordige tijd, verleden tijd, voltooid deelwoord) en de hele werkwoordsvorm; bij een bijvoeglijk naamwoord de trap of vorm; anders een leeg tekstje.',
+  "  - Schrijf ook hier alleen Nederlands, kort en in kindertaal.",
 ].join("\n");
 
 function getProvider(): Provider {
@@ -132,7 +137,7 @@ export async function generateDutchDescription(entry: string): Promise<{ insight
     SYSTEM_DUTCH,
     `Leg dit woord of deze uitdrukking uit voor een kind van groep 7/8: "${entry}"`,
     dutchDescriptionSchema,
-    400,
+    700,
   );
   return { insight: value, usage };
 }
