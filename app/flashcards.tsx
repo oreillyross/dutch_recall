@@ -274,7 +274,24 @@ export default function Flashcards() {
                   <div className="back-nl">{word}</div>
                   {backLang === "nl" ? (
                     <BackShell state={backNl} onRetry={() => void loadInsight(true)} onSettings={() => showTab("settings")}>
-                      {(d) => <p className="uitleg">{d.uitleg}</p>}
+                      {(d) => (
+                        <>
+                          <p className="uitleg">{d.uitleg}</p>
+                          {d.grammatica?.length > 0 && (
+                            <div className="sec">
+                              <h3>Grammatica</h3>
+                              <ul className="gram">
+                                {d.grammatica.map((g) => (
+                                  <li key={g.woord}>
+                                    <b>{g.woord}</b> <span>{g.soort}</span>
+                                    {g.details && <span> · {g.details}</span>}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </>
+                      )}
                     </BackShell>
                   ) : (
                     <BackShell state={back} onRetry={() => void loadInsight(true)} onSettings={() => showTab("settings")}>

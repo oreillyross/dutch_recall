@@ -166,3 +166,6 @@
 dialog.confirm { background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius); padding: 20px; max-width: 360px; }
 dialog.confirm::backdrop { background: rgba(0,0,0,.45); }
 dialog.confirm p { margin: 0; line-height: 1.5; }
+
+.gram { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 15px; }
+.gram span { color: var(--back-muted); }
