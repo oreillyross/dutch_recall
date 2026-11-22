@@ -5,7 +5,7 @@ export const nl: Messages = {
   targetLanguage: "Nederlands",
   deckName: "Nederlandse kaartjes",
 
-  tabs: { aria: "Onderdelen", cards: "Kaartjes", words: "Woorden", usage: "Gebruik" },
+  tabs: { aria: "Onderdelen", cards: "Kaartjes", words: "Woorden", settings: "Instellingen", usage: "Gebruik" },
 
   cards: {
     progress: (n, total) => `${n} / ${total}`,
@@ -48,11 +48,14 @@ export const nl: Messages = {
   settings: {
     title: "Instellingen",
     accessCode: "Toegangscode",
+    accessNotRequired: "Deze site heeft geen toegangscode nodig.",
+    studyLanguage: "Taal om te leren",
+    studyLanguageHelp: "Elke taal heeft zijn eigen woorden, kaartjes en gebruikstotalen.",
     accessPlaceholder: "Nodig om deze site te gebruiken",
     unlocked: "Ontgrendeld in deze browser.",
     lock: "Vergrendelen",
     unlock: "Ontgrendelen",
-    language: "Taal",
+    language: "Achterkant",
     languageHelp: "Bepaalt de taal van de hele app en hoe de kaartjes worden uitgelegd.",
     optionEn: "Engels",
     optionNative: "Nederlands (uitleg voor groep 7/8)",

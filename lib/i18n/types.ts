@@ -9,7 +9,7 @@ export interface Messages {
   targetLanguage: string;
   deckName: string; // "Dutch cards" / "Nederlandse kaartjes"
 
-  tabs: { aria: string; cards: string; words: string; usage: string };
+  tabs: { aria: string; cards: string; words: string; settings: string; usage: string };
 
   cards: {
     progress: (n: number, total: number) => string;
@@ -54,6 +54,9 @@ export interface Messages {
   settings: {
     title: string;
     accessCode: string;
+    accessNotRequired: string;
+    studyLanguage: string;
+    studyLanguageHelp: string;
     accessPlaceholder: string;
     unlocked: string;
     lock: string;

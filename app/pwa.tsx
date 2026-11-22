@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MESSAGES } from "@/lib/i18n";
-import { readBackMode } from "@/lib/storage";
+import { buildMessages } from "@/lib/i18n";
+import { keysFor, readBackMode, readLang } from "@/lib/storage";
+import { CONFIGS, type LanguageCode } from "@/lib/languages";
 import type { UiLang } from "@/lib/i18n";
 
 type InstallEvent = Event & {
@@ -24,13 +25,17 @@ export default function Pwa() {
   const [deferred, setDeferred] = useState<InstallEvent | null>(null);
   const [iosHint, setIosHint] = useState(false);
   const [lang, setLang] = useState<UiLang>("en");
+  const [code, setCode] = useState<LanguageCode>("nl");
 
   useEffect(() => {
     if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
     }
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLang(readBackMode());
+    const c = readLang();
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setCode(c);
+    setLang(readBackMode(keysFor(c)));
+    /* eslint-enable react-hooks/set-state-in-effect */
     let dismissed = false;
     try { dismissed = localStorage.getItem(DISMISS_KEY) === "1"; } catch {}
     if (isStandalone() || dismissed) return;
@@ -69,7 +74,7 @@ export default function Pwa() {
   }
 
   if (!deferred && !iosHint) return null;
-  const t = MESSAGES[lang].pwa;
+  const t = buildMessages(CONFIGS[code])[lang].pwa;
 
   return (
     <div className="install-banner" role="dialog" aria-label={t.installAria}>

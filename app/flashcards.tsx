@@ -1,17 +1,17 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { InsightError, fetchDescription, fetchInsight } from "@/lib/insight-client";
-import { LANG } from "@/lib/languages";
+import { CONFIGS, LANGUAGE_CODES, themeCss, type LanguageCode } from "@/lib/languages";
 import type { BackMode, Description, Insight } from "@/lib/schema";
 import { getSession, lock, unlock, type SessionState } from "@/lib/session-client";
 import { BUILD } from "@/lib/build-info";
-import { APP_NAME, MESSAGES, type Messages } from "@/lib/i18n";
-import { KEYS, getItem, migrateCaches, readBackMode, removeItem, setItem } from "@/lib/storage";
+import { APP_NAME, buildMessages, type Messages } from "@/lib/i18n";
+import { getItem, keysFor, migrateCaches, readBackMode, readLang, removeItem, saveLang, setItem } from "@/lib/storage";
 import { emptyUsage, recordCall, recordError, type UsageTotals } from "@/lib/usage";
 import { entryKey, parseWords, shuffled } from "@/lib/words";
 
-type Tab = "cards" | "settings" | "usage";
+type Tab = "cards" | "words" | "settings" | "usage";
 type BackState<T = Insight> =
   | { status: "idle" }
   | { status: "loading" }
@@ -21,6 +21,7 @@ type BackState<T = Insight> =
 export default function Flashcards() {
   const [ready, setReady] = useState(false);
   const [tab, setTab] = useState<Tab>("cards");
+  const [langCode, setLangCode] = useState<LanguageCode>("nl"); // language being learned
   const [raw, setRaw] = useState(""); // saved words, newline-separated
   const [draft, setDraft] = useState(""); // new words typed but not yet saved
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
@@ -45,34 +46,68 @@ export default function Flashcards() {
   const dialogRef = useRef<HTMLDialogElement>(null);
   const backRef = useRef<HTMLDivElement>(null);
 
-  // Hydrate from localStorage (client only).
-  useEffect(() => {
-    migrateCaches(); // old Dutch-specific cache field names -> language-neutral ones
-    const d = getItem<string[]>(KEYS.deck, []);
-    const i = Math.min(getItem<number>(KEYS.index, 0), Math.max(d.length - 1, 0));
-    /* eslint-disable react-hooks/set-state-in-effect */
-    setRaw(getItem<string>(KEYS.raw, ""));
-    const sh = getItem<boolean>(KEYS.shuffle, true);
+  const cfg = CONFIGS[langCode];
+  const KEYS = useMemo(() => keysFor(langCode), [langCode]);
+
+  // Load everything saved for one language (client only).
+  const hydrate = useCallback((code: LanguageCode) => {
+    const k = keysFor(code);
+    migrateCaches(k); // old Dutch-specific cache field names -> language-neutral ones
+    const d = getItem<string[]>(k.deck, []);
+    const i = Math.min(getItem<number>(k.index, 0), Math.max(d.length - 1, 0));
+    reqId.current++; // drop any in-flight request for the previous language
+    setLangCode(code);
+    setRaw(getItem<string>(k.raw, ""));
+    const sh = getItem<boolean>(k.shuffle, true);
     setShuffleOn(sh);
     setPendingShuffle(sh);
     setDeck(d);
     setIndex(i);
-    setInsights(getItem<Record<string, Insight>>(KEYS.insights, {}));
-    setDescriptions(getItem<Record<string, Description>>(KEYS.descriptions, {}));
-    const lang: BackMode = readBackMode();
+    setInsights(getItem<Record<string, Insight>>(k.insights, {}));
+    setDescriptions(getItem<Record<string, Description>>(k.descriptions, {}));
+    const lang: BackMode = readBackMode(k);
     setBackMode(lang);
     setPendingMode(lang);
-    removeItem(KEYS.access); // legacy plaintext access code from older versions
-    setUsage(getItem<UsageTotals>(KEYS.usage, emptyUsage()));
-    if (!d.length) setTab("settings");
+    removeItem(k.access); // legacy plaintext access code from older versions
+    setUsage(getItem<UsageTotals>(k.usage, emptyUsage()));
+    setDraft("");
+    setFlipped(false);
+    setFetchState({ status: "idle" });
+    setSettingsSaved(false);
+    return d.length;
+  }, []);
+
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
+    const n = hydrate(readLang());
+    if (!n) setTab("words");
     setReady(true);
     /* eslint-enable react-hooks/set-state-in-effect */
     getSession()
       .then(setSession)
       .catch(() => setSession(null));
-  }, []);
+  }, [hydrate]);
 
-  const t = MESSAGES[backMode];
+  const switchLanguage = (code: LanguageCode) => {
+    if (code === langCode) return;
+    saveLang(code);
+    hydrate(code);
+  };
+
+  const messages = useMemo(() => buildMessages(cfg), [cfg]);
+  const t = messages[backMode];
+
+  // Accent colour follows the language being learned.
+  useEffect(() => {
+    let el = document.getElementById("lang-theme");
+    if (!el) {
+      el = document.createElement("style");
+      el.id = "lang-theme";
+      document.head.appendChild(el);
+    }
+    el.textContent = themeCss(cfg);
+  }, [cfg]);
+
 
   // Keep the tab title and <html lang> in the chosen language.
   useEffect(() => {
@@ -81,13 +116,13 @@ export default function Flashcards() {
   }, [t]);
 
   const word = deck[index];
-  const cached = word ? insights[entryKey(word)] : undefined;
-  const cachedNl = word ? descriptions[entryKey(word)] : undefined;
+  const cached = word ? insights[entryKey(word, cfg.caseSensitiveKeys)] : undefined;
+  const cachedNl = word ? descriptions[entryKey(word, cfg.caseSensitiveKeys)] : undefined;
   const back: BackState = cached ? { status: "ok", data: cached } : fetchState;
   const backNl: BackState<Description> = cachedNl ? { status: "ok", data: cachedNl } : fetchState;
-  const savedWords = parseWords(raw);
-  const draftCount = parseWords(draft).length;
-  const count = parseWords(`${raw}\n${draft}`).length;
+  const savedWords = parseWords(raw, cfg.caseSensitiveKeys);
+  const draftCount = parseWords(draft, cfg.caseSensitiveKeys).length;
+  const count = parseWords(`${raw}\n${draft}`, cfg.caseSensitiveKeys).length;
 
   useEffect(() => {
     const d = dialogRef.current;
@@ -98,7 +133,7 @@ export default function Flashcards() {
 
   const showTab = useCallback((t: Tab) => {
     setTab(t);
-    if (t === "settings") requestAnimationFrame(() => textareaRef.current?.focus({ preventScroll: true }));
+    if (t === "words") requestAnimationFrame(() => textareaRef.current?.focus({ preventScroll: true }));
   }, []);
 
   const resetCard = useCallback((nextIndex: number) => {
@@ -108,19 +143,19 @@ export default function Flashcards() {
     setFetchState({ status: "idle" });
     setItem(KEYS.index, nextIndex);
     if (backRef.current) backRef.current.scrollTop = 0;
-  }, []);
+  }, [KEYS]);
 
   const loadInsight = useCallback(
     async (force: boolean, lang: BackMode = backMode) => {
       if (!word) return;
-      const key = entryKey(word);
+      const key = entryKey(word, cfg.caseSensitiveKeys);
       if (!force && (lang === "native" ? descriptions[key] : insights[key])) return;
       const my = ++reqId.current;
       setFetchState({ status: "loading" });
       try {
         let u;
         if (lang === "native") {
-          const res = await fetchDescription(word);
+          const res = await fetchDescription(word, langCode);
           u = res.usage;
           setDescriptions((prev) => {
             const next = { ...prev, [key]: res.insight };
@@ -128,7 +163,7 @@ export default function Flashcards() {
             return next;
           });
         } else {
-          const res = await fetchInsight(word);
+          const res = await fetchInsight(word, langCode);
           u = res.usage;
           setInsights((prev) => {
             const next = { ...prev, [key]: res.insight };
@@ -153,12 +188,12 @@ export default function Flashcards() {
         if (my !== reqId.current) return;
         setFetchState({
           status: "error",
-          message: err instanceof InsightError ? err.message : MESSAGES[lang].cards.loadFailed,
+          message: err instanceof InsightError ? err.message : messages[lang].cards.loadFailed,
           needsAccess: err instanceof InsightError && err.status === 401,
         });
       }
     },
-    [word, insights, descriptions, backMode],
+    [word, insights, descriptions, backMode, langCode, cfg, messages, KEYS],
   );
 
   const saveSettings = () => {
@@ -207,9 +242,9 @@ export default function Flashcards() {
     const target = pendingDelete;
     setPendingDelete(null);
     if (!target) return;
-    const key = entryKey(target);
-    const nextSaved = savedWords.filter((w) => entryKey(w) !== key).join("\n");
-    const nextDeck = deck.filter((w) => entryKey(w) !== key);
+    const key = entryKey(target, cfg.caseSensitiveKeys);
+    const nextSaved = savedWords.filter((w) => entryKey(w, cfg.caseSensitiveKeys) !== key).join("\n");
+    const nextDeck = deck.filter((w) => entryKey(w, cfg.caseSensitiveKeys) !== key);
     setRaw(nextSaved);
     setItem(KEYS.raw, nextSaved);
     setDeck(nextDeck);
@@ -218,7 +253,7 @@ export default function Flashcards() {
   };
 
   const saveWords = () => {
-    const merged = parseWords(`${raw}\n${draft}`);
+    const merged = parseWords(`${raw}\n${draft}`, cfg.caseSensitiveKeys);
     const mergedRaw = merged.join("\n");
     const nextDeck = shuffleOn ? shuffled(merged) : merged;
     setRaw(mergedRaw);
@@ -261,8 +296,11 @@ export default function Flashcards() {
           <button role="tab" id="tab-cards" aria-selected={tab === "cards"} aria-controls="panel-cards" onClick={() => showTab("cards")}>
             {t.tabs.cards}
           </button>
-          <button role="tab" id="tab-settings" aria-selected={tab === "settings"} aria-controls="panel-settings" onClick={() => showTab("settings")}>
+          <button role="tab" id="tab-words" aria-selected={tab === "words"} aria-controls="panel-words" onClick={() => showTab("words")}>
             {t.tabs.words}
+          </button>
+          <button role="tab" id="tab-settings" aria-selected={tab === "settings"} aria-controls="panel-settings" onClick={() => showTab("settings")}>
+            {t.tabs.settings}
           </button>
           <button role="tab" id="tab-usage" aria-selected={tab === "usage"} aria-controls="panel-usage" onClick={() => showTab("usage")}>
             {t.tabs.usage}
@@ -297,30 +335,30 @@ export default function Flashcards() {
                   }}
                 >
                   <span className="tag">{t.targetLanguage}</span>
-                  <div className={`word${long ? " long" : ""}`} lang={LANG.code}>
+                  <div className={`word${long ? " long" : ""}`} lang={cfg.code}>
                     {word}
                   </div>
                   <span className="hint">{t.cards.hint}</span>
                 </div>
                 <div className="face card-back" ref={backRef} aria-live="polite">
                   <span className="tag">{t.cards.backTag}</span>
-                  <div className="back-nl" lang={LANG.code}>
+                  <div className="back-nl" lang={cfg.code}>
                     {word}
                   </div>
                   {backMode === "native" ? (
                     <BackShell t={t} state={backNl} onRetry={() => void loadInsight(true)} onSettings={() => showTab("settings")}>
                       {(d) => (
                         <>
-                          <p className="uitleg" lang={LANG.code}>
+                          <p className="uitleg" lang={cfg.code}>
                             {d.explanation}
                           </p>
                           {d.grammar?.length > 0 && (
                             <div className="sec">
-                              <h3 lang={LANG.code}>{t.cards.grammar}</h3>
-                              <ul className="gram" lang={LANG.code}>
+                              <h3 lang={cfg.code}>{t.cards.grammar}</h3>
+                              <ul className="gram" lang={cfg.code}>
                                 {d.grammar.map((g) => (
                                   <li key={g.word}>
-                                    <b lang={LANG.code}>{g.word}</b> <span>{g.kind}</span>
+                                    <b lang={cfg.code}>{g.word}</b> <span>{g.kind}</span>
                                     {g.details && <span> · {g.details}</span>}
                                   </li>
                                 ))}
@@ -332,7 +370,7 @@ export default function Flashcards() {
                     </BackShell>
                   ) : (
                     <BackShell t={t} state={back} onRetry={() => void loadInsight(true)} onSettings={() => showTab("settings")}>
-                      {(d) => <EnglishBody d={d} t={t} />}
+                      {(d) => <EnglishBody d={d} t={t} code={cfg.code} />}
                     </BackShell>
                   )}
                 </div>
@@ -355,14 +393,14 @@ export default function Flashcards() {
           <div className="empty">
             <h2>{t.cards.emptyTitle}</h2>
             <p>{t.cards.emptyBody}</p>
-            <button className="btn primary" onClick={() => showTab("settings")}>
+            <button className="btn primary" onClick={() => showTab("words")}>
               {t.cards.openWords}
             </button>
           </div>
         )}
       </section>
 
-      <section className="panel settings" id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden={tab !== "settings"}>
+      <section className="panel settings" id="panel-words" role="tabpanel" aria-labelledby="tab-words" hidden={tab !== "words"}>
         <label className="title" htmlFor="words">
           {t.words.title}
         </label>
@@ -371,7 +409,7 @@ export default function Flashcards() {
           <ul className="pills" aria-label={t.words.savedAria}>
             {savedWords.map((w) => (
               <li key={w} className="pill">
-                <span lang={LANG.code}>{w}</span>
+                <span lang={cfg.code}>{w}</span>
                 <button type="button" aria-label={t.words.removeAria(w)} onClick={() => setPendingDelete(w)}>
                   ×
                 </button>
@@ -406,7 +444,21 @@ export default function Flashcards() {
           </button>
         </div>
 
-        <h2 className="section-title">{t.settings.title}</h2>
+      </section>
+
+      <section className="panel settings" id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden={tab !== "settings"}>
+        <div className="row backlang" role="radiogroup" aria-label={t.settings.studyLanguage}>
+          <span className="title">{t.settings.studyLanguage}</span>
+          {LANGUAGE_CODES.map((code) => (
+            <label className="check" key={code}>
+              <input type="radio" name="studylang" checked={langCode === code} onChange={() => switchLanguage(code)} />{" "}
+              {CONFIGS[code].endonym}
+            </label>
+          ))}
+        </div>
+        <p className="help">{t.settings.studyLanguageHelp}</p>
+
+        {session && !session.required && <p className="help">{t.settings.accessNotRequired}</p>}
         {session?.required && (
           <>
             <label className="title access" htmlFor="access">
@@ -624,7 +676,7 @@ function BackShell<T>({
   return <>{children(state.data)}</>;
 }
 
-function EnglishBody({ d, t }: { d: Insight; t: Messages }) {
+function EnglishBody({ d, t, code }: { d: Insight; t: Messages; code: LanguageCode }) {
   return (
     <>
       <div className="back-en">{d.english[0] || "—"}</div>
@@ -641,7 +693,7 @@ function EnglishBody({ d, t }: { d: Insight; t: Messages }) {
           <h3>{t.cards.inUse}</h3>
           {d.examples.map((x, i) => (
             <div className="ex" key={i}>
-              <div className="nl" lang={LANG.code}>{x.text}</div>
+              <div className="nl" lang={code}>{x.text}</div>
               <div className="en">{x.en}</div>
             </div>
           ))}
@@ -659,7 +711,7 @@ function EnglishBody({ d, t }: { d: Insight; t: Messages }) {
           <div className="rel">
             {d.related.map((r, i) => (
               <Fragment key={i}>
-                <b lang={LANG.code}>{r.text}</b>
+                <b lang={code}>{r.text}</b>
                 <span>{r.en}</span>
               </Fragment>
             ))}

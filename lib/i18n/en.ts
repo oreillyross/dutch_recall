@@ -7,7 +7,7 @@ export const buildEn = (l: LanguageConfig): Messages => ({
   targetLanguage: l.name,
   deckName: `${l.name} cards`,
 
-  tabs: { aria: "Sections", cards: "Cards", words: "Words", usage: "Usage" },
+  tabs: { aria: "Sections", cards: "Cards", words: "Words", settings: "Settings", usage: "Usage" },
 
   cards: {
     progress: (n, total) => `${n} / ${total}`,
@@ -50,12 +50,15 @@ export const buildEn = (l: LanguageConfig): Messages => ({
   settings: {
     title: "Settings",
     accessCode: "Access code",
+    accessNotRequired: "This site does not need an access code.",
+    studyLanguage: "Language to learn",
+    studyLanguageHelp: "Each language keeps its own words, cards and usage totals.",
     accessPlaceholder: "Needed to use this site",
     unlocked: "Unlocked on this browser.",
     lock: "Lock",
     unlock: "Unlock",
-    language: "Language",
-    languageHelp: "Sets the language of the whole app and how cards are explained.",
+    language: "Card back",
+    languageHelp: "Sets the language of the app and how cards are explained.",
     optionEn: "English",
     optionNative: l.ui.nativeRadioLabel,
     shuffle: "Shuffle order",
