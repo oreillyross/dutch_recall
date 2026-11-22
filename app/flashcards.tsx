@@ -311,11 +311,13 @@ export default function Flashcards() {
                     <BackShell t={t} state={backNl} onRetry={() => void loadInsight(true)} onSettings={() => showTab("settings")}>
                       {(d) => (
                         <>
-                          <p className="uitleg">{d.explanation}</p>
+                          <p className="uitleg" lang={LANG.code}>
+                            {d.explanation}
+                          </p>
                           {d.grammar?.length > 0 && (
                             <div className="sec">
-                              <h3>{t.cards.grammar}</h3>
-                              <ul className="gram">
+                              <h3 lang={LANG.code}>{t.cards.grammar}</h3>
+                              <ul className="gram" lang={LANG.code}>
                                 {d.grammar.map((g) => (
                                   <li key={g.word}>
                                     <b lang={LANG.code}>{g.word}</b> <span>{g.kind}</span>
