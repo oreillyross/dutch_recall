@@ -1,4 +1,4 @@
-# Dutch Flashcards
+# Langcards
 
 Paste Dutch words and phrases, flip the cards, and get an LLM-written explanation of each one: English
 translation, grammar, pronunciation hints, examples, notes and related words. Next.js (App Router) on

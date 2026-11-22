@@ -4,11 +4,17 @@ import "./globals.css";
 import Pwa from "./pwa";
 
 export const metadata: Metadata = {
-  title: "Dutch Flashcards",
-  description: "Learn Dutch words and phrases with flashcards.",
-  applicationName: "Dutch Flashcards",
-  appleWebApp: { capable: true, title: "Dutch", statusBarStyle: "default" },
-  icons: { icon: "/icons/icon-192.png", apple: "/icons/apple-touch-icon.png" },
+  title: "Langcards",
+  description: "Learn words and phrases in another language with flashcards.",
+  applicationName: "Langcards",
+  appleWebApp: { capable: true, title: "Langcards", statusBarStyle: "default" },
+  icons: {
+    icon: [
+      { url: "/icons/icon.svg", type: "image/svg+xml" },
+      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: "/icons/apple-touch-icon.png",
+  },
 };
 
 export const viewport: Viewport = {

@@ -1,6 +1,25 @@
+import { execSync } from "node:child_process";
 import type { NextConfig } from "next";
 
+function git(cmd: string): string {
+  try {
+    return execSync(`git ${cmd}`, { stdio: ["ignore", "pipe", "ignore"] }).toString().trim();
+  } catch {
+    return "";
+  }
+}
+
+// Shown on the Usage tab. Production deploys run from the release workflow (`vercel build` on a GitHub runner at a
+// v* tag), so the tag is the build number. Falls back to GitHub/Vercel env vars, then "dev".
+const buildRef = git("describe --tags --always") || process.env.GITHUB_REF_NAME || "dev";
+const buildSha = (git("rev-parse --short HEAD") || process.env.GITHUB_SHA || process.env.VERCEL_GIT_COMMIT_SHA || "").slice(0, 7);
+
 const nextConfig: NextConfig = {
+  env: {
+    NEXT_PUBLIC_BUILD_TIME: new Date().toISOString(),
+    NEXT_PUBLIC_BUILD_REF: buildRef,
+    NEXT_PUBLIC_BUILD_SHA: buildSha,
+  },
   async headers() {
     return [
       {

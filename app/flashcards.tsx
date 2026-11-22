@@ -4,12 +4,14 @@ import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { InsightError, fetchDutchDescription, fetchInsight } from "@/lib/insight-client";
 import type { DutchDescription, Insight } from "@/lib/schema";
 import { getSession, lock, unlock, type SessionState } from "@/lib/session-client";
+import { BUILD } from "@/lib/build-info";
+import { APP_NAME, MESSAGES, type Messages, type UiLang } from "@/lib/i18n";
 import { KEYS, getItem, removeItem, setItem } from "@/lib/storage";
 import { emptyUsage, recordCall, recordError, type UsageTotals } from "@/lib/usage";
 import { parseWords, shuffled } from "@/lib/words";
 
 type Tab = "cards" | "settings" | "usage";
-type BackLang = "en" | "nl";
+type BackLang = UiLang;
 type BackState<T = Insight> =
   | { status: "idle" }
   | { status: "loading" }
@@ -30,7 +32,10 @@ export default function Flashcards() {
   const [codeInput, setCodeInput] = useState("");
   const [sessionMsg, setSessionMsg] = useState("");
   const [descriptions, setDescriptions] = useState<Record<string, DutchDescription>>({});
-  const [backLang, setBackLang] = useState<BackLang>("en");
+  const [backLang, setBackLang] = useState<BackLang>("en"); // saved UI + card-back language
+  const [pendingLang, setPendingLang] = useState<BackLang>("en"); // staged in Settings until "Save settings"
+  const [pendingShuffle, setPendingShuffle] = useState(true);
+  const [settingsSaved, setSettingsSaved] = useState(false);
   const [usage, setUsage] = useState<UsageTotals>(emptyUsage);
   const [flipped, setFlipped] = useState(false);
   const [fetchState, setFetchState] = useState<BackState<never>>({ status: "idle" });
@@ -46,12 +51,16 @@ export default function Flashcards() {
     const i = Math.min(getItem<number>(KEYS.index, 0), Math.max(d.length - 1, 0));
     /* eslint-disable react-hooks/set-state-in-effect */
     setRaw(getItem<string>(KEYS.raw, ""));
-    setShuffleOn(getItem<boolean>(KEYS.shuffle, true));
+    const sh = getItem<boolean>(KEYS.shuffle, true);
+    setShuffleOn(sh);
+    setPendingShuffle(sh);
     setDeck(d);
     setIndex(i);
     setInsights(getItem<Record<string, Insight>>(KEYS.insights, {}));
     setDescriptions(getItem<Record<string, DutchDescription>>(KEYS.descriptions, {}));
-    setBackLang(getItem<BackLang>(KEYS.backLang, "en") === "nl" ? "nl" : "en");
+    const lang: BackLang = getItem<BackLang>(KEYS.backLang, "en") === "nl" ? "nl" : "en";
+    setBackLang(lang);
+    setPendingLang(lang);
     removeItem(KEYS.access); // legacy plaintext access code from older versions
     setUsage(getItem<UsageTotals>(KEYS.usage, emptyUsage()));
     if (!d.length) setTab("settings");
@@ -61,6 +70,14 @@ export default function Flashcards() {
       .then(setSession)
       .catch(() => setSession(null));
   }, []);
+
+  const t = MESSAGES[backLang];
+
+  // Keep the tab title and <html lang> in the chosen language.
+  useEffect(() => {
+    document.title = `${APP_NAME} · ${t.deckName}`;
+    document.documentElement.lang = t.locale;
+  }, [t]);
 
   const word = deck[index];
   const cached = word ? insights[word.toLowerCase()] : undefined;
@@ -135,7 +152,7 @@ export default function Flashcards() {
         if (my !== reqId.current) return;
         setFetchState({
           status: "error",
-          message: err instanceof InsightError ? err.message : "Could not load the insight. Try again.",
+          message: err instanceof InsightError ? err.message : MESSAGES[lang].cards.loadFailed,
           needsAccess: err instanceof InsightError && err.status === 401,
         });
       }
@@ -143,13 +160,27 @@ export default function Flashcards() {
     [word, insights, descriptions, backLang],
   );
 
-  const changeBackLang = (lang: BackLang) => {
-    if (lang === backLang) return;
-    setBackLang(lang);
-    setItem(KEYS.backLang, lang);
-    reqId.current++; // drop any in-flight request for the other language
-    setFetchState({ status: "idle" });
-    if (flipped) void loadInsight(false, lang);
+  const saveSettings = () => {
+    const langChanged = pendingLang !== backLang;
+    const shuffleChanged = pendingShuffle !== shuffleOn;
+    setItem(KEYS.shuffle, pendingShuffle);
+    setShuffleOn(pendingShuffle);
+    if (langChanged) {
+      setBackLang(pendingLang);
+      setItem(KEYS.backLang, pendingLang);
+      reqId.current++; // drop any in-flight request for the other language
+      setFetchState({ status: "idle" });
+    }
+    if (shuffleChanged) {
+      // New order applies to the whole deck, so start again from card 1.
+      const nextDeck = pendingShuffle ? shuffled(savedWords) : savedWords;
+      setDeck(nextDeck);
+      setItem(KEYS.deck, nextDeck);
+      resetCard(0);
+    } else if (langChanged && flipped) {
+      void loadInsight(false, pendingLang);
+    }
+    setSettingsSaved(true);
   };
 
   const flip = useCallback(() => {
@@ -185,14 +216,13 @@ export default function Flashcards() {
     resetCard(Math.min(index, Math.max(nextDeck.length - 1, 0)));
   };
 
-  const save = () => {
+  const saveWords = () => {
     const merged = parseWords(`${raw}\n${draft}`);
     const mergedRaw = merged.join("\n");
     const nextDeck = shuffleOn ? shuffled(merged) : merged;
     setRaw(mergedRaw);
     setDraft("");
     setItem(KEYS.raw, mergedRaw);
-    setItem(KEYS.shuffle, shuffleOn);
     setItem(KEYS.deck, nextDeck);
     setDeck(nextDeck);
     resetCard(0);
@@ -224,17 +254,17 @@ export default function Flashcards() {
     <div className="app">
       <header>
         <h1>
-          Nederlands <span>kaartjes</span>
+          Lang<span>cards</span>
         </h1>
-        <nav role="tablist" aria-label="Sections">
+        <nav role="tablist" aria-label={t.tabs.aria}>
           <button role="tab" id="tab-cards" aria-selected={tab === "cards"} aria-controls="panel-cards" onClick={() => showTab("cards")}>
-            Cards
+            {t.tabs.cards}
           </button>
           <button role="tab" id="tab-settings" aria-selected={tab === "settings"} aria-controls="panel-settings" onClick={() => showTab("settings")}>
-            Settings
+            {t.tabs.words}
           </button>
           <button role="tab" id="tab-usage" aria-selected={tab === "usage"} aria-controls="panel-usage" onClick={() => showTab("usage")}>
-            Usage
+            {t.tabs.usage}
           </button>
         </nav>
       </header>
@@ -244,7 +274,7 @@ export default function Flashcards() {
           <div id="deck">
             <div className="progress">
               <span>
-                {index + 1} / {deck.length}
+                {t.cards.progress(index + 1, deck.length)}
               </span>
               <div className="bar">
                 <i style={{ width: `${((index + 1) / deck.length) * 100}%` }} />
@@ -256,7 +286,7 @@ export default function Flashcards() {
                   className="face card-front"
                   tabIndex={0}
                   role="button"
-                  aria-label="Flip card"
+                  aria-label={t.cards.flipAria}
                   onClick={flip}
                   onKeyDown={(e) => {
                     if (e.key === "Enter") {
@@ -265,21 +295,21 @@ export default function Flashcards() {
                     }
                   }}
                 >
-                  <span className="tag">Nederlands</span>
+                  <span className="tag">{t.targetLanguage}</span>
                   <div className={`word${long ? " long" : ""}`}>{word}</div>
-                  <span className="hint">{backLang === "nl" ? "Probeer het uit te leggen, tik dan om te draaien" : "Guess the English, then tap to flip"}</span>
+                  <span className="hint">{t.cards.hint}</span>
                 </div>
                 <div className="face card-back" ref={backRef} aria-live="polite">
-                  <span className="tag">{backLang === "nl" ? "Uitleg" : "English"}</span>
+                  <span className="tag">{t.cards.backTag}</span>
                   <div className="back-nl">{word}</div>
                   {backLang === "nl" ? (
-                    <BackShell state={backNl} onRetry={() => void loadInsight(true)} onSettings={() => showTab("settings")}>
+                    <BackShell t={t} state={backNl} onRetry={() => void loadInsight(true)} onSettings={() => showTab("settings")}>
                       {(d) => (
                         <>
                           <p className="uitleg">{d.uitleg}</p>
                           {d.grammatica?.length > 0 && (
                             <div className="sec">
-                              <h3>Grammatica</h3>
+                              <h3>{t.cards.grammar}</h3>
                               <ul className="gram">
                                 {d.grammatica.map((g) => (
                                   <li key={g.woord}>
@@ -294,8 +324,8 @@ export default function Flashcards() {
                       )}
                     </BackShell>
                   ) : (
-                    <BackShell state={back} onRetry={() => void loadInsight(true)} onSettings={() => showTab("settings")}>
-                      {(d) => <EnglishBody d={d} />}
+                    <BackShell t={t} state={back} onRetry={() => void loadInsight(true)} onSettings={() => showTab("settings")}>
+                      {(d) => <EnglishBody d={d} t={t} />}
                     </BackShell>
                   )}
                 </div>
@@ -303,23 +333,23 @@ export default function Flashcards() {
             </div>
             <div className="controls">
               <button className="btn" onClick={() => go(-1)} disabled={index === 0}>
-                ← Prev
+                {t.cards.prev}
               </button>
               <button className="btn primary" onClick={flip}>
-                {flipped ? "Flip back" : "Flip"}
+                {flipped ? t.cards.flipBack : t.cards.flip}
               </button>
               <button className="btn" onClick={() => go(1)} disabled={index === deck.length - 1}>
-                Next →
+                {t.cards.next}
               </button>
             </div>
-            <div className="kbd">Space flips · ← → moves between cards</div>
+            <div className="kbd">{t.cards.keys}</div>
           </div>
         ) : (
           <div className="empty">
-            <h2>No words yet</h2>
-            <p>Paste some Dutch words or phrases in Settings.</p>
+            <h2>{t.cards.emptyTitle}</h2>
+            <p>{t.cards.emptyBody}</p>
             <button className="btn primary" onClick={() => showTab("settings")}>
-              Open Settings
+              {t.cards.openWords}
             </button>
           </div>
         )}
@@ -327,17 +357,15 @@ export default function Flashcards() {
 
       <section className="panel settings" id="panel-settings" role="tabpanel" aria-labelledby="tab-settings" hidden={tab !== "settings"}>
         <label className="title" htmlFor="words">
-          Your Dutch words
+          {t.words.title}
         </label>
-        <p className="help">
-          One word or phrase per line. Duplicates and blank lines are ignored. Saved words are locked; remove one with its ×.
-        </p>
+        <p className="help">{t.words.help}</p>
         {savedWords.length > 0 && (
-          <ul className="pills" aria-label="Saved words">
+          <ul className="pills" aria-label={t.words.savedAria}>
             {savedWords.map((w) => (
               <li key={w} className="pill">
                 <span>{w}</span>
-                <button type="button" aria-label={`Remove ${w}`} onClick={() => setPendingDelete(w)}>
+                <button type="button" aria-label={t.words.removeAria(w)} onClick={() => setPendingDelete(w)}>
                   ×
                 </button>
               </li>
@@ -350,20 +378,36 @@ export default function Flashcards() {
           spellCheck={false}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
-          placeholder={
-            savedWords.length
-              ? "Add more words…"
-              : "gezellig\naan de slag gaan\nuitzoeken\nde fiets\nhet is niet mijn pakkie-an"
-          }
+          placeholder={savedWords.length ? t.words.placeholderMore : t.words.placeholderFirst}
         />
+        <div className="row">
+          <span className="count">{t.words.count(count)}</span>
+          <span className="spacer" />
+          {draftCount > 0 && (
+            <button
+              className="btn ghost"
+              onClick={() => {
+                setDraft("");
+                textareaRef.current?.focus();
+              }}
+            >
+              {t.words.clearNew}
+            </button>
+          )}
+          <button className="btn primary" onClick={saveWords}>
+            {t.words.save}
+          </button>
+        </div>
+
+        <h2 className="section-title">{t.settings.title}</h2>
         {session?.required && (
           <>
             <label className="title access" htmlFor="access">
-              Access code
+              {t.settings.accessCode}
             </label>
             {session.unlocked ? (
               <div className="row">
-                <span className="count">Unlocked on this browser.</span>
+                <span className="count">{t.settings.unlocked}</span>
                 <span className="spacer" />
                 <button
                   className="btn ghost"
@@ -372,7 +416,7 @@ export default function Flashcards() {
                     lock().then(setSession, (e: Error) => setSessionMsg(e.message));
                   }}
                 >
-                  Lock
+                  {t.settings.lock}
                 </button>
               </div>
             ) : (
@@ -397,68 +441,86 @@ export default function Flashcards() {
                   spellCheck={false}
                   value={codeInput}
                   onChange={(e) => setCodeInput(e.target.value)}
-                  placeholder="Needed to use this site"
+                  placeholder={t.settings.accessPlaceholder}
                 />
                 <button className="btn primary" type="submit" disabled={!codeInput}>
-                  Unlock
+                  {t.settings.unlock}
                 </button>
               </form>
             )}
             {sessionMsg && <p className="help" role="alert">{sessionMsg}</p>}
           </>
         )}
-        <div className="row backlang" role="radiogroup" aria-label="Card back language">
-          <span className="title">Card back</span>
+        <div className="row backlang" role="radiogroup" aria-label={t.settings.language}>
+          <span className="title">{t.settings.language}</span>
           <label className="check">
-            <input type="radio" name="backlang" checked={backLang === "en"} onChange={() => changeBackLang("en")} /> English description
+            <input
+              type="radio"
+              name="backlang"
+              checked={pendingLang === "en"}
+              onChange={() => {
+                setPendingLang("en");
+                setSettingsSaved(false);
+              }}
+            />{" "}
+            {t.settings.optionEn}
           </label>
           <label className="check">
-            <input type="radio" name="backlang" checked={backLang === "nl"} onChange={() => changeBackLang("nl")} /> Dutch description
-            (groep 7/8)
+            <input
+              type="radio"
+              name="backlang"
+              checked={pendingLang === "nl"}
+              onChange={() => {
+                setPendingLang("nl");
+                setSettingsSaved(false);
+              }}
+            />{" "}
+            {t.settings.optionNl}
           </label>
         </div>
+        <p className="help">{t.settings.languageHelp}</p>
         <div className="row">
-          <span className="count">
-            {count} {count === 1 ? "word" : "words"}
-          </span>
           <label className="check">
-            <input type="checkbox" checked={shuffleOn} onChange={(e) => setShuffleOn(e.target.checked)} /> Shuffle order
+            <input
+              type="checkbox"
+              checked={pendingShuffle}
+              onChange={(e) => {
+                setPendingShuffle(e.target.checked);
+                setSettingsSaved(false);
+              }}
+            />{" "}
+            {t.settings.shuffle}
           </label>
           <span className="spacer" />
-          {draftCount > 0 && (
-            <button
-              className="btn ghost"
-              onClick={() => {
-                setDraft("");
-                textareaRef.current?.focus();
-              }}
-            >
-              Clear new
-            </button>
+          {settingsSaved && (
+            <span className="count" role="status">
+              {t.settings.saved}
+            </span>
           )}
-          <button className="btn primary" onClick={save}>
-            Save &amp; refresh cards
+          <button className="btn primary" onClick={saveSettings}>
+            {t.settings.save}
           </button>
         </div>
       </section>
 
       <dialog ref={dialogRef} className="confirm" onClose={() => setPendingDelete(null)}>
         <p>
-          Remove <b>{pendingDelete}</b> from your words? Its flashcard will be deleted.
+          {pendingDelete && t.words.confirmRemove(pendingDelete)}
         </p>
         <div className="row">
           <span className="spacer" />
           <button className="btn ghost" autoFocus onClick={() => setPendingDelete(null)}>
-            Cancel
+            {t.words.cancel}
           </button>
           <button className="btn primary" onClick={confirmDelete}>
-            Remove
+            {t.words.remove}
           </button>
         </div>
       </dialog>
 
       <section className="panel" id="panel-usage" role="tabpanel" aria-labelledby="tab-usage" hidden={tab !== "usage"}>
         <UsagePanel
+          t={t}
           usage={usage}
           onReset={() => {
             const e = emptyUsage();
@@ -475,28 +537,28 @@ function fmtCost(n: number) {
   return n > 0 && n < 0.0001 ? "<$0.0001" : `$${n.toFixed(n < 1 ? 4 : 2)}`;
 }
 
-function UsagePanel({ usage, onReset }: { usage: UsageTotals; onReset: () => void }) {
+function UsagePanel({ t, usage, onReset }: { t: Messages; usage: UsageTotals; onReset: () => void }) {
   const models = Object.entries(usage.byModel);
+  const published = BUILD.time ? new Date(BUILD.time).toLocaleString(t.locale, { dateStyle: "medium", timeStyle: "short" }) : t.usage.unknown;
+  const version = [BUILD.ref, BUILD.sha && BUILD.sha !== BUILD.ref ? `(${BUILD.sha})` : ""].filter(Boolean).join(" ") || t.usage.unknown;
   return (
     <div className="usage">
-      <p className="help">
-        Tokens and estimated cost of insight lookups from this browser. Cached cards cost nothing. Estimates use list prices.
-      </p>
+      <dl className="build">
+        <div><dt>{t.usage.version}</dt><dd>{version}</dd></div>
+        <div><dt>{t.usage.published}</dt><dd>{published}</dd></div>
+      </dl>
+      <p className="help">{t.usage.help}</p>
       <div className="stats">
-        <div><b>{usage.calls}</b><span>LLM calls</span></div>
-        <div><b>{usage.inputTokens.toLocaleString()}</b><span>input tokens</span></div>
-        <div><b>{usage.outputTokens.toLocaleString()}</b><span>output tokens</span></div>
-        <div><b>{fmtCost(usage.costUSD)}</b><span>est. cost{usage.unpriced ? " (partial)" : ""}</span></div>
+        <div><b>{usage.calls}</b><span>{t.usage.calls}</span></div>
+        <div><b>{usage.inputTokens.toLocaleString()}</b><span>{t.usage.inputTokens}</span></div>
+        <div><b>{usage.outputTokens.toLocaleString()}</b><span>{t.usage.outputTokens}</span></div>
+        <div><b>{fmtCost(usage.costUSD)}</b><span>{t.usage.estCost(usage.unpriced > 0)}</span></div>
       </div>
-      {usage.errors > 0 && (
-        <p className="help">
-          {usage.errors} failed {usage.errors === 1 ? "request" : "requests"}.
-        </p>
-      )}
+      {usage.errors > 0 && <p className="help">{t.usage.failed(usage.errors)}</p>}
       {models.length > 0 && (
         <table className="usage-table">
           <thead>
-            <tr><th>Model</th><th>Calls</th><th>In</th><th>Out</th><th>Cost</th></tr>
+            <tr><th>{t.usage.model}</th><th>{t.usage.callsShort}</th><th>{t.usage.in}</th><th>{t.usage.out}</th><th>{t.usage.cost}</th></tr>
           </thead>
           <tbody>
             {models.map(([m, v]) => (
@@ -508,20 +570,22 @@ function UsagePanel({ usage, onReset }: { usage: UsageTotals; onReset: () => voi
         </table>
       )}
       <div className="row">
-        <span className="count">Since {new Date(usage.since).toLocaleDateString()}</span>
+        <span className="count">{t.usage.since(new Date(usage.since).toLocaleDateString(t.locale))}</span>
         <span className="spacer" />
-        <button className="btn ghost" onClick={onReset}>Reset</button>
+        <button className="btn ghost" onClick={onReset}>{t.usage.reset}</button>
       </div>
     </div>
   );
 }
 
 function BackShell<T>({
+  t,
   state,
   onRetry,
   onSettings,
   children,
 }: {
+  t: Messages;
   state: BackState<T>;
   onRetry: () => void;
   onSettings: () => void;
@@ -531,7 +595,7 @@ function BackShell<T>({
     return (
       <div className="loading">
         <div className="spin" />
-        <span>Looking it up…</span>
+        <span>{t.cards.loading}</span>
       </div>
     );
   if (state.status === "error")
@@ -541,11 +605,11 @@ function BackShell<T>({
         <br />
         {state.needsAccess && (
           <button className="btn small" onClick={onSettings}>
-            Open Settings
+            {t.cards.openWords}
           </button>
         )}{" "}
         <button className="btn small" onClick={onRetry}>
-          Try again
+          {t.cards.retry}
         </button>
       </div>
     );
@@ -553,11 +617,11 @@ function BackShell<T>({
   return <>{children(state.data)}</>;
 }
 
-function EnglishBody({ d }: { d: Insight }) {
+function EnglishBody({ d, t }: { d: Insight; t: Messages }) {
   return (
     <>
       <div className="back-en">{d.english[0] || "—"}</div>
-      {d.english.length > 1 && <div className="alts">also: {d.english.slice(1).join(" · ")}</div>}
+      {d.english.length > 1 && <div className="alts">{t.cards.alsoLabel} {d.english.slice(1).join(" · ")}</div>}
       {(d.pos || d.forms || d.pronunciation) && (
         <div className="chips">
           {d.pos && <span className="chip hi">{d.pos}</span>}
@@ -567,7 +631,7 @@ function EnglishBody({ d }: { d: Insight }) {
       )}
       {d.examples.length > 0 && (
         <div className="sec">
-          <h3>In use</h3>
+          <h3>{t.cards.inUse}</h3>
           {d.examples.map((x, i) => (
             <div className="ex" key={i}>
               <div className="nl">{x.nl}</div>
@@ -578,13 +642,13 @@ function EnglishBody({ d }: { d: Insight }) {
       )}
       {d.notes && (
         <div className="sec">
-          <h3>Good to know</h3>
+          <h3>{t.cards.goodToKnow}</h3>
           <p>{d.notes}</p>
         </div>
       )}
       {d.related.length > 0 && (
         <div className="sec">
-          <h3>Related</h3>
+          <h3>{t.cards.related}</h3>
           <div className="rel">
             {d.related.map((r, i) => (
               <Fragment key={i}>
