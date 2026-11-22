@@ -55,7 +55,7 @@ export const nl: Messages = {
     language: "Taal",
     languageHelp: "Bepaalt de taal van de hele app en hoe de kaartjes worden uitgelegd.",
     optionEn: "Engels",
-    optionNl: "Nederlands (uitleg voor groep 7/8)",
+    optionNative: "Nederlands (uitleg voor groep 7/8)",
     shuffle: "Willekeurige volgorde",
     save: "Instellingen opslaan",
     saved: "Instellingen opgeslagen.",

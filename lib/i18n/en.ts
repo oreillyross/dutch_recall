@@ -1,9 +1,11 @@
+import type { LanguageConfig } from "@/lib/languages/types";
 import type { Messages } from "./types";
 
-export const en: Messages = {
+/** English UI, with the language being learned filled in from its config. */
+export const buildEn = (l: LanguageConfig): Messages => ({
   locale: "en",
-  targetLanguage: "Dutch",
-  deckName: "Dutch cards",
+  targetLanguage: l.name,
+  deckName: `${l.name} cards`,
 
   tabs: { aria: "Sections", cards: "Cards", words: "Words", usage: "Usage" },
 
@@ -18,7 +20,7 @@ export const en: Messages = {
     flipBack: "Flip back",
     keys: "Space flips · ← → moves between cards",
     emptyTitle: "No words yet",
-    emptyBody: "Paste some Dutch words or phrases in Words.",
+    emptyBody: `Paste some ${l.name} words or phrases in Words.`,
     openWords: "Open Words",
     loading: "Looking it up…",
     retry: "Try again",
@@ -31,11 +33,11 @@ export const en: Messages = {
   },
 
   words: {
-    title: "Your Dutch words",
+    title: `Your ${l.name} words`,
     help: "One word or phrase per line. Duplicates and blank lines are ignored. Saved words are locked; remove one with its ×.",
     savedAria: "Saved words",
     removeAria: (w) => `Remove ${w}`,
-    placeholderFirst: "gezellig\naan de slag gaan\nuitzoeken\nde fiets\nhet is niet mijn pakkie-an",
+    placeholderFirst: l.ui.placeholderWords.join("\n"),
     placeholderMore: "Add more words…",
     count: (n) => `${n} ${n === 1 ? "word" : "words"}`,
     clearNew: "Clear new",
@@ -55,7 +57,7 @@ export const en: Messages = {
     language: "Language",
     languageHelp: "Sets the language of the whole app and how cards are explained.",
     optionEn: "English",
-    optionNl: "Dutch (groep 7/8 descriptions)",
+    optionNative: l.ui.nativeRadioLabel,
     shuffle: "Shuffle order",
     save: "Save settings",
     saved: "Settings saved.",
@@ -88,4 +90,4 @@ export const en: Messages = {
     install: "Install",
     dismiss: "Dismiss",
   },
-};
+});

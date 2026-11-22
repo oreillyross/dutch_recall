@@ -1,4 +1,4 @@
-import { dutchDescriptionSchema, insightSchema, type DutchDescription, type Insight } from "./schema";
+import { descriptionSchema, insightSchema, type BackMode, type Description, type Insight } from "./schema";
 import type { z } from "zod";
 import type { Usage } from "./usage";
 
@@ -13,13 +13,13 @@ export class InsightError extends Error {
 
 export const fetchInsight = (entry: string) => request(entry, "en", insightSchema);
 
-export const fetchDutchDescription = (entry: string) => request(entry, "nl", dutchDescriptionSchema);
+export const fetchDescription = (entry: string) => request(entry, "native", descriptionSchema);
 
-export type { DutchDescription, Insight };
+export type { Description, Insight };
 
 async function request<T>(
   entry: string,
-  lang: "en" | "nl",
+  back: BackMode,
   schema: z.ZodType<T>,
 ): Promise<{ insight: T; usage: Usage | null }> {
   let res: Response;
@@ -28,7 +28,7 @@ async function request<T>(
       method: "POST",
       headers: { "content-type": "application/json" },
       credentials: "same-origin", // sends the HttpOnly session cookie
-      body: JSON.stringify({ entry, lang }),
+      body: JSON.stringify({ entry, back }),
     });
   } catch {
     throw new InsightError("Network error. Check your connection and try again.");

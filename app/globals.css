@@ -4,9 +4,7 @@
     --ink: #1f1d1a;
     --muted: #6f6a62;
     --line: #e4ded3;
-    --accent: #e8590c;
-    --accent-ink: #ffffff;
-    --accent-soft: #fdeee3;
+    /* --accent, --accent-ink, --accent-soft come from the language config (see app/layout.tsx) */
     --back: #1f2a37;
     --back-ink: #f3efe8;
     --back-muted: #a9b2bd;
@@ -20,9 +18,6 @@
       --ink: #f1ece4;
       --muted: #9c958a;
       --line: #2e2b28;
-      --accent: #ff7a2f;
-      --accent-ink: #1a1208;
-      --accent-soft: #2c1f15;
       --back: #101820;
       --back-line: #26333f;
     }

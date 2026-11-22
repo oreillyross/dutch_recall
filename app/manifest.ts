@@ -1,9 +1,10 @@
 import type { MetadataRoute } from "next";
+import { LANG } from "@/lib/languages";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Langcards",
-    short_name: "Langcards",
+    short_name: LANG.ui.manifestShortName,
     description: "Learn words and phrases in another language with flashcards.",
     id: "/",
     start_url: "/",
@@ -11,7 +12,7 @@ export default function manifest(): MetadataRoute.Manifest {
     display: "standalone",
     orientation: "portrait",
     background_color: "#f6f3ee",
-    theme_color: "#e8590c",
+    theme_color: LANG.themeColor,
     icons: [
       { src: "/icons/icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
       { src: "/icons/icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
