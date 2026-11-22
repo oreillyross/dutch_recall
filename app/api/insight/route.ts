@@ -1,19 +1,26 @@
 import { z } from "zod";
 import { accessAllowed, clientIp, rateLimit } from "@/lib/guard";
+import { CONFIGS, LANGUAGE_CODES, LANG } from "@/lib/languages";
 import { ConfigError, UpstreamError, generateDescription, generateInsight } from "@/lib/llm";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
+// `target` is the language being learned (a known code only, never free text); it defaults to the deployment language.
 // `back` picks the card-back mode. `lang: "nl"` is the legacy spelling of `back: "native"`, accepted so an
-// already-installed PWA with an old client keeps working. The language being taught comes from server config only.
+// already-installed PWA with an old client keeps working. 
 const bodySchema = z
   .object({
     entry: z.string().trim().min(1).max(200),
+    target: z.enum(LANGUAGE_CODES as [string, ...string[]]).optional(),
     back: z.enum(["en", "native"]).optional(),
     lang: z.enum(["en", "nl"]).optional(),
   })
-  .transform(({ entry, back, lang }) => ({ entry, back: back ?? (lang === "nl" ? "native" : "en") }));
+  .transform(({ entry, target, back, lang }) => ({
+    entry,
+    target: target ? CONFIGS[target as keyof typeof CONFIGS] : LANG,
+    back: back ?? (lang === "nl" ? "native" : "en"),
+  }));
 
 const json = (body: unknown, status: number, headers?: Record<string, string>) =>
   Response.json(body, { status, headers });
@@ -35,7 +42,7 @@ export async function POST(req: Request) {
   if (!parsed.success) return json({ error: "entry must be 1-200 characters" }, 400);
 
   try {
-    const { insight, usage } = await (parsed.data.back === "native" ? generateDescription : generateInsight)(parsed.data.entry);
+    const { insight, usage } = await (parsed.data.back === "native" ? generateDescription : generateInsight)(parsed.data.entry, parsed.data.target);
     console.log("insight usage", JSON.stringify(usage));
     return json(insight, 200, { "x-llm-usage": JSON.stringify(usage) });
   } catch (err) {

@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Analytics } from "@vercel/analytics/next";
 import "./globals.css";
-import { LANG } from "@/lib/languages";
+import { LANG, themeCss } from "@/lib/languages";
 import Pwa from "./pwa";
 
 export const metadata: Metadata = {
@@ -23,9 +23,7 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
-const { palette: P } = LANG;
-// Accent colours come from the language config (light, then dark-mode tint of the same hue).
-const THEME_CSS = `:root{--accent:${LANG.themeColor};--accent-ink:${P.ink};--accent-soft:${P.soft}}@media (prefers-color-scheme:dark){:root{--accent:${P.dark.color};--accent-ink:${P.dark.ink};--accent-soft:${P.dark.soft}}}`;
+const THEME_CSS = themeCss(LANG); // default language; the client swaps it when the learner switches
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

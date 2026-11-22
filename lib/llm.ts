@@ -10,7 +10,7 @@ import {
   openAIReasoningEffort,
   type Provider,
 } from "./models";
-import { LANG } from "./languages";
+import { LANG, type LanguageConfig } from "./languages";
 import { descriptionSchema, insightSchema, type Description, type Insight } from "./schema";
 
 export class ConfigError extends Error {}
@@ -90,16 +90,16 @@ async function run<T>(
   throw new UpstreamError("The language model could not produce an insight", status === 429 ? 429 : 502);
 }
 
-export async function generateInsight(entry: string): Promise<{ insight: Insight; usage: Usage }> {
-  const { value, usage } = await run(LANG.prompts.insightSystem, LANG.prompts.insightUser(entry), insightSchema, 800);
+export async function generateInsight(entry: string, lang: LanguageConfig = LANG): Promise<{ insight: Insight; usage: Usage }> {
+  const { value, usage } = await run(lang.prompts.insightSystem, lang.prompts.insightUser(entry), insightSchema, 800);
   return { insight: value, usage };
 }
 
 /** Explanation + grammar in the target language, for a 10-12 year old. */
-export async function generateDescription(entry: string): Promise<{ insight: Description; usage: Usage }> {
+export async function generateDescription(entry: string, lang: LanguageConfig = LANG): Promise<{ insight: Description; usage: Usage }> {
   const { value, usage } = await run(
-    LANG.prompts.descriptionSystem,
-    LANG.prompts.descriptionUser(entry),
+    lang.prompts.descriptionSystem,
+    lang.prompts.descriptionUser(entry),
     descriptionSchema,
     700,
   );
