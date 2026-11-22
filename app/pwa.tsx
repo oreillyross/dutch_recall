@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { MESSAGES } from "@/lib/i18n";
+import { KEYS, getItem } from "@/lib/storage";
 
 type InstallEvent = Event & {
   prompt: () => Promise<void>;
@@ -20,11 +22,14 @@ function isStandalone() {
 export default function Pwa() {
   const [deferred, setDeferred] = useState<InstallEvent | null>(null);
   const [iosHint, setIosHint] = useState(false);
+  const [lang, setLang] = useState<"en" | "nl">("en");
 
   useEffect(() => {
     if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLang(getItem<string>(KEYS.backLang, "en") === "nl" ? "nl" : "en");
     let dismissed = false;
     try { dismissed = localStorage.getItem(DISMISS_KEY) === "1"; } catch {}
     if (isStandalone() || dismissed) return;
@@ -63,19 +68,18 @@ export default function Pwa() {
   }
 
   if (!deferred && !iosHint) return null;
+  const t = MESSAGES[lang].pwa;
 
   return (
-    <div className="install-banner" role="dialog" aria-label="Install app">
+    <div className="install-banner" role="dialog" aria-label={t.installAria}>
       <div className="install-text">
-        <strong>Install Dutch Flashcards</strong>
+        <strong>{t.installTitle}</strong>
         <span>
-          {deferred
-            ? "Add it to your home screen for quick, full-screen access."
-            : "Tap the Share button, then “Add to Home Screen”."}
+          {deferred ? t.installBody : t.iosBody}
         </span>
       </div>
-      {deferred && <button className="btn primary" onClick={install}>Install</button>}
-      <button className="install-close" onClick={dismiss} aria-label="Dismiss">×</button>
+      {deferred && <button className="btn primary" onClick={install}>{t.install}</button>}
+      <button className="install-close" onClick={dismiss} aria-label={t.dismiss}>×</button>
     </div>
   );
 }

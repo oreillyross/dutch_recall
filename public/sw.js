@@ -1,5 +1,5 @@
 // Minimal service worker: makes the app installable and keeps the shell working offline.
-const CACHE = "dutch-recall-v1";
+const CACHE = "langcards-v2";
 const OFFLINE_URLS = ["/"];
 
 self.addEventListener("install", (event) => {

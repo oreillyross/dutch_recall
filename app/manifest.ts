@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Dutch Flashcards",
-    short_name: "Dutch",
-    description: "Learn Dutch words and phrases with flashcards.",
+    name: "Langcards",
+    short_name: "Langcards",
+    description: "Learn words and phrases in another language with flashcards.",
     id: "/",
     start_url: "/",
     scope: "/",

@@ -169,3 +169,9 @@ dialog.confirm p { margin: 0; line-height: 1.5; }
 
 .gram { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; font-size: 15px; }
 .gram span { color: var(--back-muted); }
+
+.section-title { font-family: Fraunces, Georgia, serif; font-weight: 600; font-size: 18px; margin: 28px 0 10px; padding-top: 18px; border-top: 1px solid var(--line); }
+.build { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 0 0 14px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 14px; font-size: 14px; }
+.build div { display: flex; gap: 8px; }
+.build dt { color: var(--muted); }
+.build dd { margin: 0; font-weight: 500; }
