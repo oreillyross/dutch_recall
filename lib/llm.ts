@@ -10,7 +10,8 @@ import {
   openAIReasoningEffort,
   type Provider,
 } from "./models";
-import { dutchDescriptionSchema, insightSchema, type DutchDescription, type Insight } from "./schema";
+import { LANG } from "./languages";
+import { descriptionSchema, insightSchema, type Description, type Insight } from "./schema";
 
 export class ConfigError extends Error {}
 export class UpstreamError extends Error {
@@ -23,39 +24,6 @@ export class UpstreamError extends Error {
 }
 
 export type Usage = { model: string; inputTokens: number; outputTokens: number; costUSD: number | null };
-
-const SYSTEM = [
-  "You are a concise Dutch tutor helping an English speaker learn Dutch.",
-  "For a single word, give the translation, grammar info and usage.",
-  "For a full phrase, sentence or idiom, translate it naturally, explain the idiom (including its literal meaning), and in `notes` break down the key words.",
-  "Field rules:",
-  '- english: best natural translation first, then up to 2 genuinely distinct alternatives.',
-  '- pos: part of speech; nouns include the article, e.g. "noun · de" or "noun · het"; use "idiom" or "phrase" for those.',
-  "- forms: noun plural and diminutive; verb infinitive, past singular and past participle (mark separable verbs); adjective comparative. Short. Empty string if not useful.",
-  "- pronunciation: short respelling hint only for tricky sounds (ui, g, ij, eu); otherwise empty string.",
-  "- examples: exactly 2 everyday, short Dutch sentences using the entry, each with an English translation.",
-  "- notes: 2-4 sentences on nuance, register, common mistakes, false friends, literal meaning for idioms, a memory hook if it genuinely helps.",
-  "- related: 2-4 related words or common collocations with meanings.",
-  "Keep everything compact.",
-].join("\n");
-
-const SYSTEM_DUTCH = [
-  "Je bent een juf of meester van groep 7/8 op de basisschool (kinderen van 10 tot 12 jaar).",
-  "Leg het Nederlandse woord of de uitdrukking uit zoals je dat aan een kind in de klas zou doen.",
-  "Regels:",
-  "- Schrijf alleen in het Nederlands. Geen Engels, geen vertaling.",
-  "- Gebruik korte zinnen en eenvoudige, bekende woorden. Vermijd moeilijke woorden; als je er toch een gebruikt, leg je die meteen uit.",
-  "- Zeg wat het woord betekent. Gebruik waar het helpt een vergelijking of een voorbeeld uit het dagelijks leven van een kind (school, thuis, sport, vrienden).",
-  "- Bij een uitdrukking leg je uit wat ze echt betekent, en wat je er letterlijk mee zou bedoelen.",
-  "- Je mag het woord niet gebruiken om zichzelf uit te leggen.",
-  "- Het is een uitleg van 2 tot 4 korte zinnen, aaneengesloten tekst zonder opsommingstekens, titels of aanhef.",
-  "- Het mag vriendelijk klinken, maar niet kinderachtig.",
-  "- Vul ook `grammatica` in: voor elk belangrijk woord van het woord of de uitdrukking (maximaal 5, sla lidwoorden en voegwoordjes over) één regel.",
-  "  - woord: het woord zoals het in de invoer staat.",
-  '  - soort: de woordsoort in het Nederlands: "zelfstandig naamwoord", "werkwoord", "bijvoeglijk naamwoord", "bijwoord", "voorzetsel", enzovoort.',
-  '  - details: bij een zelfstandig naamwoord "de-woord" of "het-woord" en eventueel het meervoud; bij een werkwoord de tijd (tegenwoordige tijd, verleden tijd, voltooid deelwoord) en de hele werkwoordsvorm; bij een bijvoeglijk naamwoord de trap of vorm; anders een leeg tekstje.',
-  "  - Schrijf ook hier alleen Nederlands, kort en in kindertaal.",
-].join("\n");
 
 function getProvider(): Provider {
   const p = (process.env.LLM_PROVIDER || "anthropic").toLowerCase();
@@ -123,20 +91,16 @@ async function run<T>(
 }
 
 export async function generateInsight(entry: string): Promise<{ insight: Insight; usage: Usage }> {
-  const { value, usage } = await run(
-    SYSTEM,
-    `The learner pasted this Dutch word or phrase: "${entry}"`,
-    insightSchema,
-    800,
-  );
+  const { value, usage } = await run(LANG.prompts.insightSystem, LANG.prompts.insightUser(entry), insightSchema, 800);
   return { insight: value, usage };
 }
 
-export async function generateDutchDescription(entry: string): Promise<{ insight: DutchDescription; usage: Usage }> {
+/** Explanation + grammar in the target language, for a 10-12 year old. */
+export async function generateDescription(entry: string): Promise<{ insight: Description; usage: Usage }> {
   const { value, usage } = await run(
-    SYSTEM_DUTCH,
-    `Leg dit woord of deze uitdrukking uit voor een kind van groep 7/8: "${entry}"`,
-    dutchDescriptionSchema,
+    LANG.prompts.descriptionSystem,
+    LANG.prompts.descriptionUser(entry),
+    descriptionSchema,
     700,
   );
   return { insight: value, usage };

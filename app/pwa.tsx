@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { MESSAGES } from "@/lib/i18n";
-import { KEYS, getItem } from "@/lib/storage";
+import { readBackMode } from "@/lib/storage";
+import type { UiLang } from "@/lib/i18n";
 
 type InstallEvent = Event & {
   prompt: () => Promise<void>;
@@ -22,14 +23,14 @@ function isStandalone() {
 export default function Pwa() {
   const [deferred, setDeferred] = useState<InstallEvent | null>(null);
   const [iosHint, setIosHint] = useState(false);
-  const [lang, setLang] = useState<"en" | "nl">("en");
+  const [lang, setLang] = useState<UiLang>("en");
 
   useEffect(() => {
     if ("serviceWorker" in navigator && process.env.NODE_ENV === "production") {
       navigator.serviceWorker.register("/sw.js").catch(() => {});
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setLang(getItem<string>(KEYS.backLang, "en") === "nl" ? "nl" : "en");
+    setLang(readBackMode());
     let dismissed = false;
     try { dismissed = localStorage.getItem(DISMISS_KEY) === "1"; } catch {}
     if (isStandalone() || dismissed) return;

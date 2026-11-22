@@ -1,12 +1,34 @@
 # Langcards
 
-Paste Dutch words and phrases, flip the cards, and get an LLM-written explanation of each one: English
+Paste words and phrases in **Dutch, German, French or Italian**, flip the cards, and get an LLM-written explanation of each one: English
 translation, grammar, pronunciation hints, examples, notes and related words. Next.js (App Router) on
 Vercel, with the model call made server-side so your API key never reaches the browser.
 
 - **No accounts, no database.** The word list, deck position and cached insights live in the browser's `localStorage`.
 - **Insights are cached per word**, so each card costs one LLM call, once.
 - **Usage tab** shows calls, tokens and estimated cost for this browser.
+
+## Languages
+
+One codebase, one deployment per language. The language is a **build-time** env var, never taken from a request:
+
+| `NEXT_PUBLIC_LANG` | Language | Accent |
+| --- | --- | --- |
+| `nl` (default) | Dutch | orange |
+| `de` | German (case-sensitive words: `Essen` ≠ `essen`) | gold |
+| `fr` | French | blue |
+| `it` | Italian | green |
+
+Each deployment is its own origin, so `localStorage` (keys are prefixed with the language code), the session
+cookie, the PWA install and the Usage totals are isolated per language. Details: [SPEC-LANGUAGES.md](SPEC-LANGUAGES.md).
+
+**Per-language deploy:** create a new Vercel project from this repo (Next.js preset, no overrides) and set
+`NEXT_PUBLIC_LANG=de|fr|it`, the provider key and optionally `ACCESS_CODE` / `LLM_MODEL`. Redeploy after changing
+`NEXT_PUBLIC_LANG`. The Dutch project needs nothing new.
+
+**Add a language:** copy `lib/languages/nl.ts`, fill every field of `LanguageConfig` (prompts, UI labels, placeholder
+words, colours), register it in `lib/languages/index.ts` and add the code to the `LanguageCode` type. The config
+completeness test fails if a field is empty.
 
 ## Run locally
 
@@ -19,7 +41,9 @@ pnpm dev
 Open http://localhost:3000, paste a few words in **Settings**, save, and flip a card.
 
 ```bash
+NEXT_PUBLIC_LANG=de pnpm dev   # try another language
 pnpm lint
+pnpm test                      # pure-logic unit tests (Vitest)
 pnpm build
 ```
 
@@ -33,6 +57,7 @@ pnpm build
 | `OPENAI_API_KEY` | if provider is `openai` | none | OpenAI key |
 | `ACCESS_CODE` | no, recommended on a public URL | unset (open) | Shared secret, exchanged once for a session cookie |
 | `RATE_LIMIT_PER_MIN` | no | `30` | Max requests per IP per minute |
+| `NEXT_PUBLIC_LANG` | no | `nl` | Language taught: `nl`, `de`, `fr` or `it` (build time) |
 
 Only the selected provider's key is needed. A missing key makes the card show a generic "server is not
 configured" error (the specific reason is in the server log, never in the response).
@@ -114,13 +139,16 @@ app/api/insight/route.ts           POST /api/insight: rate limit, session check,
 app/api/session/route.ts           GET/POST/DELETE: check, unlock (set cookie), lock
 lib/llm.ts                         provider selection and structured-output call (Vercel AI SDK)
 lib/models.ts                      default models, price table, reasoning-model helpers
-lib/schema.ts                      Zod insight schema (shared by server and client)
+lib/schema.ts                      Zod insight + description schemas (language-neutral, shared by server and client)
+lib/languages/                     per-language config: prompts, UI labels, theme (nl, de, fr, it)
 lib/guard.ts                       access code, session cookie and rate limit
 lib/storage.ts                     safe localStorage helpers
 reference/dutch-flashcards.html    original single-file prototype
 ```
 
-`POST /api/insight` takes `{ "entry": string }` (trimmed, 1-200 characters) and returns the insight object.
+`POST /api/insight` takes `{ "entry": string, "back": "en" | "native" }` (entry trimmed, 1-200 characters; `back`
+defaults to `en`; the legacy `"lang": "nl"` is still read as `native`) and returns the insight (English back) or the
+description (explanation + grammar in the target language).
 Errors are `{ "error": string }` with 400, 401, 429, 500 or 502. Token usage and an estimated cost for the
 call come back in an `x-llm-usage` response header, which the Usage tab accumulates in `localStorage`.
 

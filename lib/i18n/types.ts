@@ -1,5 +1,5 @@
-/** UI language. Today it also decides how cards are explained ("en" = English back, "nl" = Dutch groep 7/8 back). */
-export type UiLang = "en" | "nl";
+/** UI language. It also decides how cards are explained ("en" = English back, "native" = target-language back). */
+export type UiLang = "en" | "native";
 
 /** Every user-visible string in the app. A language cannot compile with a missing key. */
 export interface Messages {
@@ -61,7 +61,7 @@ export interface Messages {
     language: string;
     languageHelp: string;
     optionEn: string;
-    optionNl: string;
+    optionNative: string;
     shuffle: string;
     save: string;
     saved: string;
